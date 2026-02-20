@@ -38,7 +38,7 @@ public class TenantAwareJpaPlatformUserDetailsService implements PlatformUserDet
     private PlatformUserRepository platformUserRepository;
 
     @Override
-    @Cacheable(value = "usersByUsername", key = "T(org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil).getTenant().getTenantIdentifier().concat(#username+'ubu')")
+    @Cacheable(value = "usersByUsername", key = "T(org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil).getTenant()?.getTenantIdentifier()?.concat(#username+'ubu')")
     public UserDetails loadUserByUsername(final String username) throws UsernameNotFoundException, DataAccessException {
 
         // Retrieve active users only

@@ -18,20 +18,19 @@
  */
 package org.apache.fineract.infrastructure.security.converter;
 
-import java.util.Collection;
+import java.util.ArrayList;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.infrastructure.security.data.FineractJwtAuthenticationToken;
 import org.apache.fineract.infrastructure.security.service.TenantAwareJpaPlatformUserDetailsService;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.lang.NonNull;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 
 @RequiredArgsConstructor
 public class FineractJwtAuthenticationTokenConverter implements Converter<Jwt, FineractJwtAuthenticationToken> {
@@ -41,10 +40,13 @@ public class FineractJwtAuthenticationTokenConverter implements Converter<Jwt, F
     @Override
     @NonNull
     public FineractJwtAuthenticationToken convert(@NonNull Jwt jwt) {
+        if (ThreadLocalContextUtil.getTenant() == null) {
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, "No tenant found in request or token", null));
+        }
         try {
             UserDetails user = userDetailsService.loadUserByUsername(jwt.getSubject());
-            Collection<GrantedAuthority> authorities = new JwtGrantedAuthoritiesConverter().convert(jwt);
-            return new FineractJwtAuthenticationToken(jwt, authorities, user);
+            return new FineractJwtAuthenticationToken(jwt, new ArrayList<>(user.getAuthorities()), user);
         } catch (UsernameNotFoundException ex) {
             throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN), ex);
         }
