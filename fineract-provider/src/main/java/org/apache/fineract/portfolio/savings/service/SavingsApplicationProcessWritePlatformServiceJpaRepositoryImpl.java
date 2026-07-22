@@ -143,7 +143,7 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
             final AppUser submittedBy = this.context.authenticatedUser();
 
             final SavingsAccount account = this.savingAccountAssembler.assembleFrom(command, submittedBy);
-            this.savingAccountRepository.save(account);
+            this.savingAccountRepository.saveAndFlush(account);
             String accountNumber = "";
             GroupSavingsIndividualMonitoring gsimAccount = null;
             BigDecimal applicationId = BigDecimal.ZERO;

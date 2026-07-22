@@ -23,6 +23,7 @@ import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.codes.domain.CodeValue;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepository;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -152,18 +153,21 @@ public class AddressWritePlatformServiceImpl implements AddressWritePlatformServ
 
         final Address addobj = this.addressRepository.getReferenceById(addressId);
 
-        if (!command.stringValueOfParameterNamed("addressLine1").isEmpty()) {
+        final String addressLine = getFirstNonBlank(command, "addressLine1", "addressLine");
+        if (StringUtils.isNotBlank(addressLine)) {
 
             is_address_update = true;
-            final String addressLine1 = command.stringValueOfParameterNamed("addressLine1");
-            addobj.setAddressLine1(addressLine1);
+            addobj.setAddressLine1(addressLine);
 
         }
 
-        if (!command.stringValueOfParameterNamed("addressLine2").isEmpty()) {
+        String addressLine2 = command.stringValueOfParameterNamed("addressLine2");
+        if (StringUtils.isBlank(addressLine2)) {
+            addressLine2 = command.stringValueOfParameterNamed("addressDetails");
+        }
+        if (StringUtils.isNotBlank(addressLine2)) {
 
             is_address_update = true;
-            final String addressLine2 = command.stringValueOfParameterNamed("addressLine2");
             addobj.setAddressLine2(addressLine2);
 
         }
@@ -175,11 +179,11 @@ public class AddressWritePlatformServiceImpl implements AddressWritePlatformServ
 
         }
 
-        if (!command.stringValueOfParameterNamed("townVillage").isEmpty()) {
+        final String neighborhood = getFirstNonBlank(command, "townVillage", "neighborhood");
+        if (StringUtils.isNotBlank(neighborhood)) {
 
             is_address_update = true;
-            final String townVillage = command.stringValueOfParameterNamed("townVillage");
-            addobj.setTownVillage(townVillage);
+            addobj.setTownVillage(neighborhood);
         }
 
         if (!command.stringValueOfParameterNamed("city").isEmpty()) {
@@ -246,5 +250,15 @@ public class AddressWritePlatformServiceImpl implements AddressWritePlatformServ
         }
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(clientAddressObj.getId()).build();
+    }
+
+    private String getFirstNonBlank(final JsonCommand command, final String... parameterNames) {
+        for (String parameterName : parameterNames) {
+            final String value = command.stringValueOfParameterNamed(parameterName);
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return "";
     }
 }

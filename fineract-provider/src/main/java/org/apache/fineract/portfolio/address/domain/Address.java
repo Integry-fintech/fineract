@@ -190,6 +190,9 @@ public class Address extends AbstractPersistableCustom<Long> {
         if (jsonObject.has("addressLine1")) {
             addressLine1 = jsonObject.get("addressLine1").getAsString();
         }
+        if (jsonObject.has("addressLine")) {
+            addressLine1 = jsonObject.get("addressLine").getAsString();
+        }
         if (jsonObject.has("addressLine2")) {
 
             addressLine2 = jsonObject.get("addressLine2").getAsString();
@@ -197,8 +200,19 @@ public class Address extends AbstractPersistableCustom<Long> {
         if (jsonObject.has("addressLine3")) {
             addressLine3 = jsonObject.get("addressLine3").getAsString();
         }
+        if (jsonObject.has("addressDetails")) {
+            final String addressDetails = jsonObject.get("addressDetails").getAsString();
+            if (addressLine2.isBlank()) {
+                addressLine2 = addressDetails;
+            } else {
+                addressLine3 = addressDetails;
+            }
+        }
         if (jsonObject.has("townVillage")) {
             townVillage = jsonObject.get("townVillage").getAsString();
+        }
+        if (jsonObject.has("neighborhood")) {
+            townVillage = jsonObject.get("neighborhood").getAsString();
         }
         if (jsonObject.has("city")) {
             city = jsonObject.get("city").getAsString();

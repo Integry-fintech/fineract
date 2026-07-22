@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collection;
 import lombok.Getter;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 
 @Getter
@@ -30,6 +31,9 @@ import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 public class AddressData implements Serializable {
 
     private final Long clientID;
+
+    // New flattened shape compatible with external Address model
+    private final Long id;
 
     private final String addressType;
 
@@ -50,6 +54,12 @@ public class AddressData implements Serializable {
     private final String townVillage;
 
     private final String city;
+
+    private final String neighborhood;
+
+    private final String addressLine;
+
+    private final String addressDetails;
 
     private final String countyDistrict;
 
@@ -93,6 +103,10 @@ public class AddressData implements Serializable {
         this.postalCode = postalCode;
         this.stateProvinceId = stateProvinceId;
         this.city = city;
+        this.id = null;
+        this.neighborhood = null;
+        this.addressLine = addressLine1;
+        this.addressDetails = buildAddressDetails(addressLine2, addressLine3);
         this.townVillage = null;
         this.clientID = null;
         this.addressType = null;
@@ -120,6 +134,7 @@ public class AddressData implements Serializable {
             final Collection<CodeValueData> stateProvinceIdOptions, final Collection<CodeValueData> addressTypeIdOptions) {
         this.addressType = addressType;
         this.clientID = clientID;
+        this.id = addressId;
         this.addressId = addressId;
         this.addressTypeId = addressTypeId;
         this.isActive = is_active;
@@ -129,6 +144,9 @@ public class AddressData implements Serializable {
         this.addressLine3 = addressLine3;
         this.townVillage = townVillage;
         this.city = city;
+        this.neighborhood = StringUtils.firstNonBlank(townVillage, countyDistrict);
+        this.addressLine = addressLine1;
+        this.addressDetails = buildAddressDetails(addressLine2, addressLine3);
         this.countyDistrict = countyDistrict;
         this.stateProvinceId = stateProvinceId;
         this.countryId = countryId;
@@ -213,6 +231,19 @@ public class AddressData implements Serializable {
                 addressLine2temp, addressLine3temp, townVillagetemp, citytemp, countyDistricttemp, stateProvinceIdtemp, countryIdtemp, null,
                 null, postalCodetemp, latitudetemp, longitudetemp, createdBytemp, createdOntemp, updatedBytemp, updatedOntemp,
                 countryIdOptions, stateProvinceIdOptions, addressTypeIdOptions);
+    }
+
+    private static String buildAddressDetails(final String addressLine2, final String addressLine3) {
+        if (StringUtils.isBlank(addressLine2) && StringUtils.isBlank(addressLine3)) {
+            return null;
+        }
+        if (StringUtils.isBlank(addressLine2)) {
+            return addressLine3;
+        }
+        if (StringUtils.isBlank(addressLine3)) {
+            return addressLine2;
+        }
+        return addressLine2 + ", " + addressLine3;
     }
 
 }
