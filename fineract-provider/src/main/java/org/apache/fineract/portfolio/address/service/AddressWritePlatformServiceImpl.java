@@ -270,4 +270,14 @@ public class AddressWritePlatformServiceImpl implements AddressWritePlatformServ
         }
         return "";
     }
+
+    private String getFirstNonBlank(final JsonCommand command, final String... parameterNames) {
+        for (String parameterName : parameterNames) {
+            final String value = command.stringValueOfParameterNamed(parameterName);
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
 }

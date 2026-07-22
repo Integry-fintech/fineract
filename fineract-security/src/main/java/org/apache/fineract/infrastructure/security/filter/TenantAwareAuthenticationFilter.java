@@ -42,12 +42,16 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain) throws ServletException, IOException {
         try {
             String token = resolver.resolve(request);
-            String tenantId;
-            if (token != null) {
+            String tenantId = request.getHeader("Fineract-Platform-TenantId");
+            if (org.apache.commons.lang3.StringUtils.isBlank(tenantId)) {
+                tenantId = request.getParameter("tenantIdentifier");
+            }
+            if (org.apache.commons.lang3.StringUtils.isBlank(tenantId) && token != null) {
                 var jwt = JWTParser.parse(token); // not validated here!
                 var claims = jwt.getJWTClaimsSet();
                 tenantId = (String) claims.getClaim("tenant");
-            } else {
+            }
+            if (org.apache.commons.lang3.StringUtils.isBlank(tenantId)) {
                 tenantId = request.getParameter("tenantId");
             }
             ThreadLocalContextUtil.setTenant(tenantDetailsService.loadTenantById(tenantId, false));
