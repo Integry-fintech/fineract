@@ -91,7 +91,7 @@ file("${rootDir}/custom").eachDir { companyDir ->
         file("${rootDir}/custom/${companyDir.name}").eachDir { categoryDir ->
             if('build' != categoryDir.name) {
                 file("${rootDir}/custom/${companyDir.name}/${categoryDir.name}").eachDir { moduleDir ->
-                    if('build' != moduleDir.name) {
+                    if ('build' != moduleDir.name && new File(moduleDir, 'build.gradle').isFile()) {
                         include ":custom:${companyDir.name}:${categoryDir.name}:${moduleDir.name}"
                     }
                 }
