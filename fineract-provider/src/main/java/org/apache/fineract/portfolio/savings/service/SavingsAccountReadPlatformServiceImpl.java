@@ -333,7 +333,7 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             sqlBuilder.append("tr.id as transactionId, tr.transaction_type_enum as transactionType, ");
             sqlBuilder.append("tr.transaction_date as transactionDate, tr.amount as transactionAmount,");
             sqlBuilder.append("tr.submitted_on_date as transSubmittedOnDate,tr.cumulative_balance_derived as cumulativeBalance,");
-            sqlBuilder.append("tr.running_balance_derived as runningBalance, tr.is_reversed as reversed,");
+            sqlBuilder.append("tr.running_balance_derived as runningBalance, tr.is_reversed as reversed, tr.is_zero_interest_pivot as zeroInterestPivot,");
             sqlBuilder.append("tr.balance_end_date_derived as balanceEndDate, tr.overdraft_amount_derived as overdraftAmount,");
             sqlBuilder.append("tr.is_manual as manualTransaction,tr.office_id as officeId, ");
             sqlBuilder.append("pd.payment_type_id as paymentType,pd.account_number as accountNumber,pd.check_number as checkNumber, ");
@@ -628,6 +628,7 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                             id, accountNo, date, currency, amount, outstandingChargeAmount, runningBalance, reversed, transSubmittedOnDate,
                             postInterestAsOn, cumulativeBalance, balanceEndDate);
                     savingsAccountTransactionData.setOverdraftAmount(overdraftAmount);
+                    savingsAccountTransactionData.setZeroInterestPivot(rs.getBoolean("zeroInterestPivot"));
 
                     transMap.put("id", transactionId);
                     if (savingsAccountData.getOfficeId() == null) {
@@ -1114,7 +1115,7 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                     + "tr.transaction_date as transactionDate, tr.external_id as externalId, tr.amount as transactionAmount, "
                     + "tr.release_id_of_hold_amount as releaseTransactionId, tr.reason_for_block as reasonForBlock, "
                     + "tr.submitted_on_date as submittedOnDate, au.username as submittedByUsername, nt.note as transactionNote, "
-                    + "tr.running_balance_derived as runningBalance, tr.is_reversed as reversed, "
+                    + "tr.running_balance_derived as runningBalance, tr.is_reversed as reversed, tr.is_zero_interest_pivot as zeroInterestPivot, "
                     + "tr.is_reversal as isReversal, tr.original_transaction_id as originalTransactionId, tr.is_lien_transaction as lienTransaction, "
                     + "fromtran.id as fromTransferId, fromtran.is_reversed as fromTransferReversed, "
                     + "fromtran.transaction_date as fromTransferDate, fromtran.amount as fromTransferAmount, "
@@ -1221,9 +1222,11 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             }
             final String submittedByUsername = rs.getString("submittedByUsername");
             final String note = rs.getString("transactionNote");
-            return SavingsAccountTransactionData.create(id, transactionType, paymentDetailData, savingsId, accountNo, externalId, date,
+            final SavingsAccountTransactionData transactionData = SavingsAccountTransactionData.create(id, transactionType, paymentDetailData, savingsId, accountNo, externalId, date,
                     currency, amount, outstandingChargeAmount, runningBalance, reversed, transfer, submittedOnDate, postInterestAsOn,
                     submittedByUsername, note, isReversal, originalTransactionId, lienTransaction, releaseTransactionId, reasonForBlock);
+            transactionData.setZeroInterestPivot(rs.getBoolean("zeroInterestPivot"));
+            return transactionData;
         }
     }
 

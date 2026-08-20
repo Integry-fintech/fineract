@@ -64,9 +64,9 @@ public class AccountTransferDetailAssembler {
     public AccountTransferDetails assembleSavingsToSavingsTransfer(final JsonCommand command) {
 
         final Long fromSavingsId = command.longValueOfParameterNamed(fromAccountIdParamName);
-        final SavingsAccount fromSavingsAccount = this.savingsAccountAssembler.assembleFrom(fromSavingsId, false);
+        final boolean backdatedTxnsAllowedTill = this.savingsAccountAssembler.getPivotConfigStatus();
+        final SavingsAccount fromSavingsAccount = this.savingsAccountAssembler.assembleFrom(fromSavingsId, backdatedTxnsAllowedTill);
 
-        final boolean backdatedTxnsAllowedTill = false;
         final Long toSavingsId = command.longValueOfParameterNamed(toAccountIdParamName);
         final SavingsAccount toSavingsAccount = this.savingsAccountAssembler.assembleFrom(toSavingsId, backdatedTxnsAllowedTill);
 
@@ -77,7 +77,7 @@ public class AccountTransferDetailAssembler {
     public AccountTransferDetails assembleSavingsToLoanTransfer(final JsonCommand command) {
 
         final Long fromSavingsAccountId = command.longValueOfParameterNamed(fromAccountIdParamName);
-        final boolean backdatedTxnsAllowedTill = false;
+        final boolean backdatedTxnsAllowedTill = this.savingsAccountAssembler.getPivotConfigStatus();
         final SavingsAccount fromSavingsAccount = this.savingsAccountAssembler.assembleFrom(fromSavingsAccountId, backdatedTxnsAllowedTill);
 
         final Long toLoanAccountId = command.longValueOfParameterNamed(toAccountIdParamName);
@@ -91,7 +91,7 @@ public class AccountTransferDetailAssembler {
 
         final Long fromLoanAccountId = command.longValueOfParameterNamed(fromAccountIdParamName);
         final Loan fromLoanAccount = this.loanAccountAssembler.assembleFrom(fromLoanAccountId);
-        final boolean backdatedTxnsAllowedTill = false;
+        final boolean backdatedTxnsAllowedTill = this.savingsAccountAssembler.getPivotConfigStatus();
         final Long toSavingsAccountId = command.longValueOfParameterNamed(toAccountIdParamName);
         final SavingsAccount toSavingsAccount = this.savingsAccountAssembler.assembleFrom(toSavingsAccountId, backdatedTxnsAllowedTill);
 

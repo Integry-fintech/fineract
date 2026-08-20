@@ -81,6 +81,7 @@ import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -344,14 +345,50 @@ public class SavingsAccountAssembler {
         return loadTransactionsToSavingsAccount(account, backdatedTxnsAllowedTill);
     }
 
+    /**
+     * Loads the minimum transaction range that can safely create a zero-interest
+     * checkpoint. Until the first such checkpoint exists, the whole history is
+     * deliberately loaded once so its running balance is authoritative.
+     */
+    public SavingsAccount assembleForZeroInterestPivot(final Long savingsId) {
+        final SavingsAccount account = this.savingsAccountRepository.findSavingsWithNotFoundDetection(savingsId, true);
+        final LocalDate pivotDate = account.getSummary().getInterestPostedTillDate();
+        final List<SavingsAccountTransaction> zeroInterestPivots = this.savingsAccountRepository.findZeroInterestPivots(account,
+                PageRequest.of(0, 1));
+        final SavingsAccountTransaction zeroInterestPivot = zeroInterestPivots.isEmpty() ? null : zeroInterestPivots.get(0);
+
+        final List<SavingsAccountTransaction> transactions;
+        if (zeroInterestPivot != null && pivotDate != null && pivotDate.equals(zeroInterestPivot.getTransactionDate())) {
+            account.getSummary().setRunningBalanceOnPivotDate(zeroInterestPivot.getRunningBalance(account.getCurrency()).getAmount());
+            account.setZeroInterestPivotDate(pivotDate);
+            transactions = this.savingsAccountRepository.findTransactionsAfterZeroInterestPivotDate(account, pivotDate);
+        } else {
+            account.getSummary().setRunningBalanceOnPivotDate(BigDecimal.ZERO);
+            transactions = this.savingsAccountRepository.findAllTransactions(account);
+        }
+        account.setSavingsAccountTransactions(transactions);
+        account.setHelpers(this.savingsAccountTransactionSummaryWrapper, this.savingsHelper, this.configurationDomainService);
+        return account;
+    }
+
     public SavingsAccount loadTransactionsToSavingsAccount(final SavingsAccount account, final boolean backdatedTxnsAllowedTill) {
         List<SavingsAccountTransaction> savingsAccountTransactions = null;
         if (backdatedTxnsAllowedTill) {
             LocalDate pivotDate = account.getSummary().getInterestPostedTillDate();
             boolean isNotPresent = pivotDate == null;
             if (!isNotPresent) {
-                // Get savings account transactions
-                if (isRelaxingDaysConfigForPivotDateEnabled()) {
+                final List<SavingsAccountTransaction> zeroInterestPivots = this.savingsAccountRepository
+                        .findZeroInterestPivots(account, PageRequest.of(0, 1));
+                final SavingsAccountTransaction zeroInterestPivot = zeroInterestPivots.isEmpty() ? null : zeroInterestPivots.get(0);
+
+                if (zeroInterestPivot != null && pivotDate.equals(zeroInterestPivot.getTransactionDate())) {
+                    // A zero-interest pivot is a complete balance snapshot. Do not load
+                    // it again: its running balance becomes the opening balance.
+                    account.getSummary().setRunningBalanceOnPivotDate(zeroInterestPivot.getRunningBalance(account.getCurrency()).getAmount());
+                    account.setZeroInterestPivotDate(pivotDate);
+                    savingsAccountTransactions = this.savingsAccountRepository.findTransactionsAfterZeroInterestPivotDate(account,
+                            pivotDate);
+                } else if (isRelaxingDaysConfigForPivotDateEnabled()) {
                     final Long relaxingDaysForPivotDate = this.configurationDomainService.retrieveRelaxingDaysConfigForPivotDate();
                     LocalDate interestPostedTillDate = account.getSummary().getInterestPostedTillDate();
                     savingsAccountTransactions = this.savingsAccountRepository.findTransactionsAfterPivotDate(account,

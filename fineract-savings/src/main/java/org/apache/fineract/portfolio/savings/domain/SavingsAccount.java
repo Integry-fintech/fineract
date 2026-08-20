@@ -324,6 +324,8 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
     protected SavingsHelper savingsHelper;
     @Transient
     protected List<SavingsAccountTransaction> savingsAccountTransactions = new ArrayList<>();
+    @Transient
+    private LocalDate zeroInterestPivotDate;
 
     @Column(name = "deposit_type_enum", insertable = false, updatable = false)
     private Integer depositType;
@@ -471,6 +473,14 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
 
     public List<SavingsAccountTransaction> getSavingsAccountTransactionsWithPivotConfig() {
         return this.savingsAccountTransactions;
+    }
+
+    public void setZeroInterestPivotDate(final LocalDate zeroInterestPivotDate) {
+        this.zeroInterestPivotDate = zeroInterestPivotDate;
+    }
+
+    public boolean hasZeroInterestPivotAtLastInterestPostingDate() {
+        return this.zeroInterestPivotDate != null && this.zeroInterestPivotDate.equals(this.summary.getInterestPostedTillDate());
     }
 
     public ExternalId getExternalId() {
@@ -1070,8 +1080,12 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
     public void validatePivotDateTransaction(LocalDate transactionDate, final boolean backdatedTxnsAllowedTill,
             final Long relaxingDaysConfigForPivotDate, final String resourceTypeName) {
         if (backdatedTxnsAllowedTill) {
-            if (this.getSummary().getInterestPostedTillDate() != null && DateUtils.isBefore(transactionDate,
-                    getSummary().getInterestPostedTillDate().minusDays(relaxingDaysConfigForPivotDate))) {
+            final LocalDate interestPostedTillDate = this.getSummary().getInterestPostedTillDate();
+            final boolean isOnOrBeforeZeroInterestPivot = this.zeroInterestPivotDate != null
+                    && this.zeroInterestPivotDate.equals(interestPostedTillDate)
+                    && !DateUtils.isAfter(transactionDate, this.zeroInterestPivotDate);
+            if (isOnOrBeforeZeroInterestPivot || interestPostedTillDate != null && DateUtils.isBefore(transactionDate,
+                    interestPostedTillDate.minusDays(relaxingDaysConfigForPivotDate))) {
                 final Object[] defaultUserArgs = Arrays.asList(transactionDate, getActivationDate()).toArray();
                 final String defaultUserMessage = "Transaction date cannot be before transactions pivot date.";
                 final ApiParameterError error = ApiParameterError.parameterError(
@@ -2762,6 +2776,21 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
 
     public void addTransactionToExisting(final SavingsAccountTransaction transaction) {
         this.savingsAccountTransactions.add(transaction);
+    }
+
+    /**
+     * Creates a zero-value type-3 transaction that snapshots the derived running
+     * balance. This intentionally only updates the savings account and never
+     * invokes accounting integration.
+     */
+    public SavingsAccountTransaction postZeroInterestPivot(final LocalDate pivotDate) {
+        final SavingsAccountTransaction transaction = SavingsAccountTransaction.zeroInterestPivot(this, office(), pivotDate);
+        addTransactionToExisting(transaction);
+        recalculateDailyBalances(Money.of(this.currency, this.summary.getRunningBalanceOnPivotDate()), pivotDate, true, false);
+        this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
+                this.savingsAccountTransactions);
+        this.zeroInterestPivotDate = pivotDate;
+        return transaction;
     }
 
     public void setStatus(final Integer status) {

@@ -127,6 +127,17 @@ public class SavingsAccountRepositoryWrapper {
         return this.savingsAccountTransactionRepository.findTransactionsAfterPivotDate(savingsAccount, transactionDate);
     }
 
+    @Transactional
+    public List<SavingsAccountTransaction> findTransactionsAfterZeroInterestPivotDate(
+            @Param("savingsAccount") SavingsAccount savingsAccount, @Param("date") LocalDate transactionDate) {
+        return this.savingsAccountTransactionRepository.findTransactionsAfterZeroInterestPivotDate(savingsAccount, transactionDate);
+    }
+
+    public List<SavingsAccountTransaction> findZeroInterestPivots(@Param("savingsAccount") SavingsAccount savingsAccount,
+            Pageable pageable) {
+        return this.savingsAccountTransactionRepository.findZeroInterestPivots(savingsAccount, pageable);
+    }
+
     public List<SavingsAccountTransaction> findTransactionRunningBalanceBeforePivotDate(
             @Param("savingsAccount") SavingsAccount savingsAccount, @Param("date") LocalDate date) {
         return this.savingsAccountTransactionRepository.findTransactionRunningBalanceBeforePivotDate(savingsAccount, date);
