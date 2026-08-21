@@ -1,19 +1,16 @@
 name: Fineract CI
 
+# DESHABILITADO: este CI heredado de Apache no se ejecuta de forma automática.
+# Arrastra reglas propias de la fundación (cabeceras de licencia, Error Prone
+# sobre código upstream) que bloquean el pipeline sin aportar valor aquí, y
+# duplica la compilación que ya hace publish-ecr.yml.
+# Se conserva accesible a mano para poder ejecutar los tests puntualmente.
+# Para reactivarlo, devolver los disparadores push y pull_request.
 on:
-  push:
-    branches:
-      - main
-      - staging
-    paths-ignore:
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

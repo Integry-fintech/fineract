@@ -18,6 +18,11 @@ on:
         required: false
         default: 'linux/amd64'
         type: string
+      deploy:
+        description: 'Redeploy the ECS service after publishing the image'
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   # Keyed on the ref so that main and staging never cancel each other.
@@ -32,12 +37,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
+    # main deploys to production, every other ref to staging. The environment
+    # supplies the cluster, service and credentials, so the same variable names
+    # resolve to different values per environment and the branches can never
+    # deploy into each other's infrastructure.
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+
     permissions:
       contents: read
 
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
 
     steps:
       - name: Validate workflow configuration
@@ -46,9 +59,15 @@ jobs:
           MISSING_REPOSITORY: ${{ vars.ECR_REPOSITORY == '' }}
           MISSING_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
           MISSING_SECRET_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY == '' }}
+          MISSING_CLUSTER: ${{ vars.ECS_CLUSTER == '' }}
+          MISSING_SERVICE: ${{ vars.ECS_SERVICE == '' }}
+          WILL_DEPLOY: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy }}
+          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
         run: |
           set -euo pipefail
           failed=0
+
+          echo "Target environment: $ENVIRONMENT"
 
           if [ "$MISSING_REGION" = 'true' ]; then
             echo '::error::Repository variable AWS_REGION is not set.'
@@ -65,6 +84,18 @@ jobs:
           if [ "$MISSING_SECRET_KEY" = 'true' ]; then
             echo '::error::Repository secret AWS_SECRET_ACCESS_KEY is not set.'
             failed=1
+          fi
+
+          # Only required when this run is going to deploy.
+          if [ "$WILL_DEPLOY" = 'true' ]; then
+            if [ "$MISSING_CLUSTER" = 'true' ]; then
+              echo "::error::Variable ECS_CLUSTER is not set in the '$ENVIRONMENT' environment."
+              failed=1
+            fi
+            if [ "$MISSING_SERVICE" = 'true' ]; then
+              echo "::error::Variable ECS_SERVICE is not set in the '$ENVIRONMENT' environment."
+              failed=1
+            fi
           fi
 
           exit "$failed"
@@ -158,12 +189,36 @@ jobs:
             -Djib.to.auth.password="$ecr_password" \
             -Djib.from.platforms="$PLATFORMS"
 
+      - name: Deploy to Amazon ECS
+        id: deploy
+        if: github.event_name != 'workflow_dispatch' || inputs.deploy
+        run: |
+          set -euo pipefail
+
+          # force-new-deployment restarts the service so that it pulls its image
+          # tag again. It does NOT choose the tag: that comes from the task
+          # definition, which must therefore reference a moving tag (the branch
+          # tag or latest), never an immutable per-commit one.
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment > /dev/null
+
+          echo "Deployment triggered on $ECS_CLUSTER/$ECS_SERVICE. Waiting for the service to stabilise..."
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+          echo "Service is stable."
+
       - name: Report the published image
+        if: always() && steps.meta.outputs.short_sha != ''
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
           TAGS: ${{ steps.meta.outputs.tags }}
           PLATFORMS: ${{ inputs.platforms || 'linux/amd64' }}
+          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          DEPLOYED: ${{ steps.deploy.outputs.deployed }}
         run: |
           set -euo pipefail
           digest="$(aws ecr describe-images \
@@ -172,15 +227,23 @@ jobs:
             --query 'imageDetails[0].imageDigest' \
             --output text)"
 
+          if [ "$DEPLOYED" = 'true' ]; then
+            deploy_row="| Deployment | \`${ECS_CLUSTER}\` / \`${ECS_SERVICE}\` — stable |"
+          else
+            deploy_row='| Deployment | not performed |'
+          fi
+
           {
             echo '### Image published to Amazon ECR'
             echo ''
             echo '| | |'
             echo '|---|---|'
+            echo "| Environment | \`${ENVIRONMENT}\` |"
             echo "| Repository | \`${REGISTRY}/${ECR_REPOSITORY}\` |"
             echo "| Tags | \`${TAGS}\` |"
             echo "| Platforms | \`${PLATFORMS}\` |"
             echo "| Digest | \`${digest}\` |"
+            echo "$deploy_row"
             echo ''
             echo 'Reference the digest for reproducible deployments:'
             echo ''
