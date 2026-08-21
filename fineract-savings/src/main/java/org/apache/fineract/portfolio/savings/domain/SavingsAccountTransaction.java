@@ -133,6 +133,10 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
     @Column(name = "is_reversal", nullable = false)
     private boolean reversalTransaction;
 
+    /** A technical balance checkpoint for a savings account with no interest. */
+    @Column(name = "is_zero_interest_pivot", nullable = false)
+    private boolean zeroInterestPivot;
+
     @Column(name = "original_transaction_id")
     private Long originalTxnId;
 
@@ -217,6 +221,14 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         final String refNo = null;
         return new SavingsAccountTransaction(savingsAccount, office, SavingsAccountTransactionType.INTEREST_POSTING.getValue(), date,
                 amount, isReversed, isManualTransaction, lienTransaction, refNo);
+    }
+
+    public static SavingsAccountTransaction zeroInterestPivot(final SavingsAccount savingsAccount, final Office office,
+            final LocalDate date) {
+        final SavingsAccountTransaction transaction = interestPosting(savingsAccount, office, date,
+                Money.zero(savingsAccount.getCurrency()), false);
+        transaction.zeroInterestPivot = true;
+        return transaction;
     }
 
     public static SavingsAccountTransaction overdraftInterest(final SavingsAccount savingsAccount, final Office office,
@@ -543,6 +555,10 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         return getTransactionType().isInterestPosting() || getTransactionType().isOverDraftInterestPosting();
     }
 
+    public boolean isZeroInterestPivot() {
+        return this.zeroInterestPivot;
+    }
+
     public boolean isWithdrawalFeeAndNotReversed() {
         return getTransactionType().isWithdrawalFee() && isNotReversed();
     }
@@ -627,6 +643,7 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         thisTransactionData.put("currencyCode", currencyCode);
         thisTransactionData.put("amount", this.amount);
         thisTransactionData.put("overdraftAmount", this.overdraftAmount);
+        thisTransactionData.put("zeroInterestPivot", this.zeroInterestPivot);
 
         if (this.paymentDetail != null) {
             thisTransactionData.put("paymentTypeId", this.paymentDetail.getPaymentType().getId());

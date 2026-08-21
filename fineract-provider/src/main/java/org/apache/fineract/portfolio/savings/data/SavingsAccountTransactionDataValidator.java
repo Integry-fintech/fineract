@@ -93,6 +93,10 @@ public class SavingsAccountTransactionDataValidator {
         final LocalDate lastInterestPostingDate = savingsAccount.getSummary().getInterestPostedTillDate();
 
         if (backdatedTxnsAllowedTill && lastInterestPostingDate != null) {
+            if (savingsAccount.hasZeroInterestPivotAtLastInterestPostingDate()
+                    && !DateUtils.isAfter(transactionDate, lastInterestPostingDate)) {
+                throw new TransactionBeforePivotDateNotAllowed(transactionDate, lastInterestPostingDate);
+            }
             LocalDate pivotDate = lastInterestPostingDate;
             if (isRelaxingDaysConfigOn) {
                 pivotDate = pivotDate.minusDays(this.configurationDomainService.retrieveRelaxingDaysConfigForPivotDate());

@@ -108,6 +108,7 @@ public class SavingsAccountTransactionData implements Serializable {
     private transient Long modifiedId;
     private transient String refNo;
     private Boolean isOverdraft;
+    private boolean zeroInterestPivot;
 
     private Long accountCredit;
     private Long accountDebit;
@@ -578,6 +579,10 @@ public class SavingsAccountTransactionData implements Serializable {
 
     public void setOverdraftAmount(final BigDecimal overdraftAmount) {
         this.overdraftAmount = overdraftAmount;
+    }
+
+    public void setZeroInterestPivot(final boolean zeroInterestPivot) {
+        this.zeroInterestPivot = zeroInterestPivot;
     }
 
     public boolean isPenaltyChargeAndNotReversed() {

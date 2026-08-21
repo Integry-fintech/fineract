@@ -100,6 +100,19 @@ public interface SavingsAccountRepository extends JpaRepository<SavingsAccount, 
     @Query("SELECT sa.id FROM SavingsAccount sa WHERE sa.status = :status")
     List<Long> findSavingsAccountIdsByStatusId(Integer status);
 
+    @Query("""
+            SELECT sa.id FROM SavingsAccount sa
+            WHERE sa.id > :lastSavingsId
+              AND sa.status = :status
+              AND sa.depositType = :depositType
+              AND (sa.nominalAnnualInterestRate IS NULL OR sa.nominalAnnualInterestRate = 0)
+              AND (sa.allowOverdraft = false OR sa.nominalAnnualInterestRateOverdraft IS NULL
+                   OR sa.nominalAnnualInterestRateOverdraft = 0)
+            ORDER BY sa.id
+            """)
+    List<Long> findZeroInterestPivotCandidateIds(@Param("lastSavingsId") Long lastSavingsId, @Param("status") Integer status,
+            @Param("depositType") Integer depositType, Pageable pageable);
+
     // COB related queries
     @Query("""
             SELECT sa.id FROM SavingsAccount sa

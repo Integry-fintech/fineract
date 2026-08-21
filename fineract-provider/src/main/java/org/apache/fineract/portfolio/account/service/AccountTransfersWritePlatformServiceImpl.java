@@ -120,7 +120,7 @@ public class AccountTransfersWritePlatformServiceImpl implements AccountTransfer
         boolean isAccountTransfer = true;
         Long fromLoanAccountId = null;
         boolean isWithdrawBalance = false;
-        final boolean backdatedTxnsAllowedTill = false;
+        final boolean backdatedTxnsAllowedTill = this.savingsAccountAssembler.getPivotConfigStatus();
 
         if (isSavingsToSavingsAccountTransfer(fromAccountType, toAccountType)) {
 
@@ -282,7 +282,7 @@ public class AccountTransfersWritePlatformServiceImpl implements AccountTransfer
         Long transferTransactionId = null;
         final boolean isAccountTransfer = true;
         final boolean isRegularTransaction = accountTransferDTO.isRegularTransaction();
-        final boolean backdatedTxnsAllowedTill = false;
+        final boolean backdatedTxnsAllowedTill = this.savingsAccountAssembler.getPivotConfigStatus();
         AccountTransferDetails accountTransferDetails = accountTransferDTO.getAccountTransferDetails();
         if (isSavingsToLoanAccountTransfer(accountTransferDTO.getFromAccountType(), accountTransferDTO.getToAccountType())) {
             //
@@ -368,7 +368,8 @@ public class AccountTransfersWritePlatformServiceImpl implements AccountTransfer
                     this.savingsAccountAssembler.setHelpers(fromSavingsAccount);
                 }
                 if (accountTransferDTO.getToSavingsAccount() == null) {
-                    toSavingsAccount = this.savingsAccountAssembler.assembleFrom(accountTransferDTO.getToAccountId(), false);
+                    toSavingsAccount = this.savingsAccountAssembler.assembleFrom(accountTransferDTO.getToAccountId(),
+                            backdatedTxnsAllowedTill);
                 } else {
                     toSavingsAccount = accountTransferDTO.getToSavingsAccount();
                     this.savingsAccountAssembler.setHelpers(toSavingsAccount);
@@ -583,7 +584,7 @@ public class AccountTransfersWritePlatformServiceImpl implements AccountTransfer
         final Loan fromLoanAccount = this.loanAccountAssembler.assembleFrom(fromLoanAccountId);
 
         BigDecimal overpaid = this.loanReadPlatformService.retrieveTotalPaidInAdvance(fromLoanAccountId).getPaidInAdvance();
-        final boolean backdatedTxnsAllowedTill = false;
+        final boolean backdatedTxnsAllowedTill = this.savingsAccountAssembler.getPivotConfigStatus();
 
         if (overpaid == null || overpaid.compareTo(BigDecimal.ZERO) == 0 || transactionAmount.floatValue() > overpaid.floatValue()) {
             if (overpaid == null) {
