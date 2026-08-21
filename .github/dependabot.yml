@@ -1,4 +1,3 @@
-# https://issues.apache.org/jira/browse/FINERACT-1453
 # https://docs.github.com/en/code-security/supply-chain-security/keeping-your-dependencies-updated-automatically/configuration-options-for-dependency-updates
 
 version: 2
@@ -7,17 +6,11 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    commit-message:
-      # Prefix all commit messages with "FINERACT-2684: "
-      prefix: "FINERACT-2684: "
     cooldown:
       default-days: 7
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "daily"
-    commit-message:
-      # Prefix all commit messages with "FINERACT-2684: "
-      prefix: "FINERACT-2684: "
     cooldown:
       default-days: 7

@@ -351,12 +351,6 @@ For GPG setup instructions, see the [Fineract GPG Guide](https://fineract.apache
 
 Commit signatures may be checked locally with `git log --show-signature`, and a "Verified" badge should appear on GitHub for [every commit](https://github.com/apache/fineract/commits/).
 
-To verify your commits locally before pushing:
-
-```bash
-./scripts/verify-signed-commits.sh
-```
-
 
 ### Examining history
 
