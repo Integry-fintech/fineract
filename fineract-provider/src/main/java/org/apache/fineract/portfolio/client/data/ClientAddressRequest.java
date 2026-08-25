@@ -32,10 +32,13 @@ public class ClientAddressRequest implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private String city;
+    private String neighborhood;
     private Long countryId;
     private Boolean isActive;
     private String postalCode;
     private Long addressTypeId;
+    private String addressLine;
+    private String addressDetails;
     private String addressLine1;
     private String addressLine2;
     private String addressLine3;
