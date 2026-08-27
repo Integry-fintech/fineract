@@ -32,6 +32,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Creates one non-financial zero-interest checkpoint while holding the account lock. */
@@ -45,10 +46,10 @@ public class PostZeroInterestPivotProcessor {
     private final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
 
     /**
-     * @return {@code true} when a checkpoint was created; {@code false} when the
-     *         account is not eligible or must be retried on the next cycle.
+     * @return {@code true} when a checkpoint was created; {@code false} when the account is not eligible or must be
+     *         retried on the next cycle.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean postPivot(final Long savingsId, final LocalDate cutOffDate) {
         final SavingsAccount account = this.savingsAccountAssembler.assembleForZeroInterestPivot(savingsId);
         if (!isEligible(account)) {
@@ -66,9 +67,8 @@ public class PostZeroInterestPivotProcessor {
 
         final SavingsAccountTransaction pivot = account.postZeroInterestPivot(cutOffDate);
         // Saving the transaction directly avoids any accounting integration. The
-        // enclosing transaction commits it together with the account summary.
-        this.savingsAccountTransactionRepository.saveAndFlush(pivot);
-        this.savingsAccountRepository.saveAndFlush(account);
+        // per-account transaction commits it together with the managed account summary.
+        this.savingsAccountTransactionRepository.save(pivot);
         log.debug("Created zero-interest pivot for savings account {} on {}", savingsId, cutOffDate);
         return true;
     }

@@ -56,8 +56,9 @@ class PostZeroInterestPivotProcessorTest {
                 transactionRepository);
 
         assertThat(processor.postPivot(9L, cutOffDate)).isTrue();
-        verify(transactionRepository).saveAndFlush(pivot);
-        verify(accountRepository).saveAndFlush(account);
+        verify(transactionRepository).save(pivot);
+        verify(transactionRepository, never()).saveAndFlush(any());
+        verify(accountRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -73,7 +74,7 @@ class PostZeroInterestPivotProcessorTest {
                 transactionRepository);
 
         assertThat(processor.postPivot(9L, LocalDate.of(2026, 8, 12))).isFalse();
-        verify(transactionRepository, never()).saveAndFlush(any());
+        verify(transactionRepository, never()).save(any());
         verify(accountRepository, never()).saveAndFlush(any());
     }
 }
