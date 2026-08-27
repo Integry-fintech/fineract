@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements. See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0.
+-->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+    <property name="current_datetime" value="NOW()"/>
+
+    <changeSet id="1" author="fineract">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists tableName="m_savings_account_transaction" indexName="idx_sat_zero_pivot_account"/>
+            </not>
+        </preConditions>
+        <createIndex tableName="m_savings_account_transaction" indexName="idx_sat_zero_pivot_account">
+            <column name="is_zero_interest_pivot"/>
+            <column name="savings_account_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2" author="fineract">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">select count(1) from job where short_name = 'SA_RBAL'</sqlCheck>
+        </preConditions>
+        <insert tableName="job">
+            <column name="name" value="Reconcile Savings Account Balances"/>
+            <column name="display_name" value="Reconcile Savings Account Balances"/>
+            <column name="cron_expression" value="0 1 0 1/1 * ? *"/>
+            <column name="create_time" valueDate="${current_datetime}"/>
+            <column name="task_priority" valueNumeric="5"/>
+            <column name="group_name"/>
+            <column name="previous_run_start_time"/>
+            <column name="job_key" value="Reconcile Savings Account BalancesJobDetail1 _ DEFAULT"/>
+            <column name="initializing_errorlog"/>
+            <column name="is_active" valueBoolean="false"/>
+            <column name="currently_running" valueBoolean="false"/>
+            <column name="updates_allowed" valueBoolean="true"/>
+            <column name="scheduler_group" valueNumeric="1"/>
+            <column name="is_misfired" valueBoolean="false"/>
+            <column name="node_id" valueNumeric="1"/>
+            <column name="is_mismatched_job" valueBoolean="true"/>
+            <column name="short_name" value="SA_RBAL"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="3" author="fineract">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="1">select count(1) from job where short_name = 'SA_RBAL'</sqlCheck>
+        </preConditions>
+        <insert tableName="job_parameters">
+            <column name="job_id" valueComputed="(select id from job where short_name = 'SA_RBAL')"/>
+            <column name="parameter_name" value="batch-size"/>
+            <column name="parameter_value" valueNumeric="100"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

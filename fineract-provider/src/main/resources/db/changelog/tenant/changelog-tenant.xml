@@ -260,4 +260,5 @@
     <include file="parts/0239_add_retained_earning_job.xml" relativeToChangelogFile="true"/>
     <include file="parts/0240_add_retained_earning_global_configuration.xml" relativeToChangelogFile="true"/>
     <include file="parts/0242_add_zero_interest_pivots_for_savings_job.xml" relativeToChangelogFile="true"/>
+    <include file="parts/0243_add_reconcile_savings_account_balances_job.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

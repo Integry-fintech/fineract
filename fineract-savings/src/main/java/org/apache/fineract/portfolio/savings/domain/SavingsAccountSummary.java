@@ -25,7 +25,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.savings.domain.interest.PostingPeriod;
@@ -110,6 +112,51 @@ public final class SavingsAccountSummary {
         this.accountBalance = Money.of(currency, this.totalDeposits).plus(this.totalInterestPosted).minus(this.totalWithdrawals)
                 .minus(this.totalWithdrawalFees).minus(this.totalAnnualFees).minus(this.totalFeeCharge).minus(this.totalPenaltyCharge)
                 .minus(totalOverdraftInterestDerived).minus(totalWithholdTax).getAmount();
+    }
+
+    /** Rebuilds persisted transaction-derived totals without recalculating interest or transaction running balances. */
+    public boolean reconcileTransactionDerivedSummary(final MonetaryCurrency currency,
+            final SavingsAccountTransactionSummaryWrapper wrapper, final List<SavingsAccountTransaction> transactions) {
+        final BigDecimal previousTotalDeposits = this.totalDeposits;
+        final BigDecimal previousTotalWithdrawals = this.totalWithdrawals;
+        final BigDecimal previousTotalInterestPosted = this.totalInterestPosted;
+        final BigDecimal previousTotalWithdrawalFees = this.totalWithdrawalFees;
+        final BigDecimal previousTotalFeeCharge = this.totalFeeCharge;
+        final BigDecimal previousTotalPenaltyCharge = this.totalPenaltyCharge;
+        final BigDecimal previousTotalAnnualFees = this.totalAnnualFees;
+        final BigDecimal previousAccountBalance = this.accountBalance;
+        final BigDecimal previousTotalOverdraftInterest = this.totalOverdraftInterestDerived;
+        final BigDecimal previousTotalWithholdTax = this.totalWithholdTax;
+        final LocalDate previousInterestPostedTillDate = this.interestPostedTillDate;
+
+        updateSummary(currency, wrapper, transactions);
+        this.accountBalance = wrapper.calculateAccountBalance(currency, transactions);
+
+        final boolean changed = !MathUtil.isEqualTo(previousTotalDeposits, this.totalDeposits)
+                || !MathUtil.isEqualTo(previousTotalWithdrawals, this.totalWithdrawals)
+                || !MathUtil.isEqualTo(previousTotalInterestPosted, this.totalInterestPosted)
+                || !MathUtil.isEqualTo(previousTotalWithdrawalFees, this.totalWithdrawalFees)
+                || !MathUtil.isEqualTo(previousTotalFeeCharge, this.totalFeeCharge)
+                || !MathUtil.isEqualTo(previousTotalPenaltyCharge, this.totalPenaltyCharge)
+                || !MathUtil.isEqualTo(previousTotalAnnualFees, this.totalAnnualFees)
+                || !MathUtil.isEqualTo(previousAccountBalance, this.accountBalance)
+                || !MathUtil.isEqualTo(previousTotalOverdraftInterest, this.totalOverdraftInterestDerived)
+                || !MathUtil.isEqualTo(previousTotalWithholdTax, this.totalWithholdTax)
+                || !Objects.equals(previousInterestPostedTillDate, this.interestPostedTillDate);
+        if (!changed) {
+            this.totalDeposits = previousTotalDeposits;
+            this.totalWithdrawals = previousTotalWithdrawals;
+            this.totalInterestPosted = previousTotalInterestPosted;
+            this.totalWithdrawalFees = previousTotalWithdrawalFees;
+            this.totalFeeCharge = previousTotalFeeCharge;
+            this.totalPenaltyCharge = previousTotalPenaltyCharge;
+            this.totalAnnualFees = previousTotalAnnualFees;
+            this.accountBalance = previousAccountBalance;
+            this.totalOverdraftInterestDerived = previousTotalOverdraftInterest;
+            this.totalWithholdTax = previousTotalWithholdTax;
+            this.interestPostedTillDate = previousInterestPostedTillDate;
+        }
+        return changed;
     }
 
     public void updateSummaryWithPivotConfig(final MonetaryCurrency currency, final SavingsAccountTransactionSummaryWrapper wrapper,

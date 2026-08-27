@@ -25,6 +25,7 @@ public enum JobName {
     APPLY_HOLIDAYS_TO_LOANS("Apply Holidays To Loans"), //
     POST_INTEREST_FOR_SAVINGS("Post Interest For Savings"), //
     POST_ZERO_INTEREST_PIVOTS_FOR_SAVINGS("Post Zero Interest Pivots For Savings"), //
+    RECONCILE_SAVINGS_ACCOUNT_BALANCES("Reconcile Savings Account Balances"), //
     TRANSFER_FEE_CHARGE_FOR_LOANS("Transfer Fee For Loans From Savings"), //
     ACCOUNTING_RUNNING_BALANCE_UPDATE("Update Accounting Running Balances"), //
     PAY_DUE_SAVINGS_CHARGES("Pay Due Savings Charges"), //
