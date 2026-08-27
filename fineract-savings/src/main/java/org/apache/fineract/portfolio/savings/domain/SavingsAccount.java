@@ -1084,8 +1084,8 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
             final boolean isOnOrBeforeZeroInterestPivot = this.zeroInterestPivotDate != null
                     && this.zeroInterestPivotDate.equals(interestPostedTillDate)
                     && !DateUtils.isAfter(transactionDate, this.zeroInterestPivotDate);
-            if (isOnOrBeforeZeroInterestPivot || interestPostedTillDate != null && DateUtils.isBefore(transactionDate,
-                    interestPostedTillDate.minusDays(relaxingDaysConfigForPivotDate))) {
+            if (isOnOrBeforeZeroInterestPivot || interestPostedTillDate != null
+                    && DateUtils.isBefore(transactionDate, interestPostedTillDate.minusDays(relaxingDaysConfigForPivotDate))) {
                 final Object[] defaultUserArgs = Arrays.asList(transactionDate, getActivationDate()).toArray();
                 final String defaultUserMessage = "Transaction date cannot be before transactions pivot date.";
                 final ApiParameterError error = ApiParameterError.parameterError(
@@ -2779,16 +2779,17 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
     }
 
     /**
-     * Creates a zero-value type-3 transaction that snapshots the derived running
-     * balance. This intentionally only updates the savings account and never
-     * invokes accounting integration.
+     * Creates a zero-value type-3 transaction that snapshots the derived running balance. This intentionally only
+     * updates the savings account and never invokes accounting integration.
      */
     public SavingsAccountTransaction postZeroInterestPivot(final LocalDate pivotDate) {
         final SavingsAccountTransaction transaction = SavingsAccountTransaction.zeroInterestPivot(this, office(), pivotDate);
         addTransactionToExisting(transaction);
         recalculateDailyBalances(Money.of(this.currency, this.summary.getRunningBalanceOnPivotDate()), pivotDate, true, false);
-        this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
-                this.savingsAccountTransactions);
+        // A zero-interest pivot is a technical checkpoint. Its zero amount must not rebuild or otherwise change the
+        // monetary summary; rebuilding from the post-pivot window can omit historical charges and corrupt the account
+        // balance. Only advance the persisted checkpoint date after its running balance has been calculated.
+        this.summary.setInterestPostedTillDate(pivotDate);
         this.zeroInterestPivotDate = pivotDate;
         return transaction;
     }
@@ -3418,6 +3419,11 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
 
     public void updateSavingsAccountSummary(final List<SavingsAccountTransaction> transactions) {
         this.summary.updateSummary(this.currency, this.savingsAccountTransactionSummaryWrapper, transactions);
+    }
+
+    public boolean reconcileTransactionDerivedSummary() {
+        return this.summary.reconcileTransactionDerivedSummary(this.currency, this.savingsAccountTransactionSummaryWrapper,
+                this.transactions);
     }
 
     public void updateReason(final String reasonForBlock) {

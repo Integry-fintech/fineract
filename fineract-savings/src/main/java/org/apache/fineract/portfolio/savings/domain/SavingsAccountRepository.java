@@ -113,6 +113,22 @@ public interface SavingsAccountRepository extends JpaRepository<SavingsAccount, 
     List<Long> findZeroInterestPivotCandidateIds(@Param("lastSavingsId") Long lastSavingsId, @Param("status") Integer status,
             @Param("depositType") Integer depositType, Pageable pageable);
 
+    @Query("""
+            SELECT sa.id FROM SavingsAccount sa
+            WHERE sa.id > :lastSavingsId
+              AND sa.status = :status
+              AND EXISTS (
+                  SELECT sat.id FROM SavingsAccountTransaction sat
+                  WHERE sat.savingsAccount = sa
+                    AND sat.zeroInterestPivot = true
+                    AND sat.reversed = false
+                    AND sat.reversalTransaction = false
+              )
+            ORDER BY sa.id
+            """)
+    List<Long> findBalanceReconciliationCandidateIds(@Param("lastSavingsId") Long lastSavingsId, @Param("status") Integer status,
+            Pageable pageable);
+
     // COB related queries
     @Query("""
             SELECT sa.id FROM SavingsAccount sa

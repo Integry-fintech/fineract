@@ -35,8 +35,7 @@ public class PostZeroInterestPivotsForSavingsConfig {
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
 
-    public PostZeroInterestPivotsForSavingsConfig(final JobRepository jobRepository,
-            final PlatformTransactionManager transactionManager) {
+    public PostZeroInterestPivotsForSavingsConfig(final JobRepository jobRepository, final PlatformTransactionManager transactionManager) {
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
     }

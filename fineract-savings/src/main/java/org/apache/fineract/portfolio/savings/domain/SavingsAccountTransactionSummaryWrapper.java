@@ -31,6 +31,21 @@ import org.springframework.stereotype.Component;
 @Component
 public final class SavingsAccountTransactionSummaryWrapper {
 
+    public BigDecimal calculateAccountBalance(final MonetaryCurrency currency, final List<SavingsAccountTransaction> transactions) {
+        Money balance = Money.zero(currency);
+        for (final SavingsAccountTransaction transaction : transactions) {
+            if (transaction.isReversed() || transaction.isReversalTransaction()) {
+                continue;
+            }
+            if (transaction.isCredit()) {
+                balance = balance.plus(transaction.getAmount(currency));
+            } else if (transaction.isDebit()) {
+                balance = balance.minus(transaction.getAmount(currency));
+            }
+        }
+        return balance.getAmount();
+    }
+
     public BigDecimal calculateTotalDeposits(final MonetaryCurrency currency, final List<SavingsAccountTransaction> transactions) {
         Money total = Money.zero(currency);
         for (final SavingsAccountTransaction transaction : transactions) {

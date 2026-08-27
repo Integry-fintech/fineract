@@ -333,7 +333,8 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             sqlBuilder.append("tr.id as transactionId, tr.transaction_type_enum as transactionType, ");
             sqlBuilder.append("tr.transaction_date as transactionDate, tr.amount as transactionAmount,");
             sqlBuilder.append("tr.submitted_on_date as transSubmittedOnDate,tr.cumulative_balance_derived as cumulativeBalance,");
-            sqlBuilder.append("tr.running_balance_derived as runningBalance, tr.is_reversed as reversed, tr.is_zero_interest_pivot as zeroInterestPivot,");
+            sqlBuilder.append(
+                    "tr.running_balance_derived as runningBalance, tr.is_reversed as reversed, tr.is_zero_interest_pivot as zeroInterestPivot,");
             sqlBuilder.append("tr.balance_end_date_derived as balanceEndDate, tr.overdraft_amount_derived as overdraftAmount,");
             sqlBuilder.append("tr.is_manual as manualTransaction,tr.office_id as officeId, ");
             sqlBuilder.append("pd.payment_type_id as paymentType,pd.account_number as accountNumber,pd.check_number as checkNumber, ");
@@ -1222,9 +1223,10 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             }
             final String submittedByUsername = rs.getString("submittedByUsername");
             final String note = rs.getString("transactionNote");
-            final SavingsAccountTransactionData transactionData = SavingsAccountTransactionData.create(id, transactionType, paymentDetailData, savingsId, accountNo, externalId, date,
-                    currency, amount, outstandingChargeAmount, runningBalance, reversed, transfer, submittedOnDate, postInterestAsOn,
-                    submittedByUsername, note, isReversal, originalTransactionId, lienTransaction, releaseTransactionId, reasonForBlock);
+            final SavingsAccountTransactionData transactionData = SavingsAccountTransactionData.create(id, transactionType,
+                    paymentDetailData, savingsId, accountNo, externalId, date, currency, amount, outstandingChargeAmount, runningBalance,
+                    reversed, transfer, submittedOnDate, postInterestAsOn, submittedByUsername, note, isReversal, originalTransactionId,
+                    lienTransaction, releaseTransactionId, reasonForBlock);
             transactionData.setZeroInterestPivot(rs.getBoolean("zeroInterestPivot"));
             return transactionData;
         }
