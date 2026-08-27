@@ -346,9 +346,8 @@ public class SavingsAccountAssembler {
     }
 
     /**
-     * Loads the minimum transaction range that can safely create a zero-interest
-     * checkpoint. Until the first such checkpoint exists, the whole history is
-     * deliberately loaded once so its running balance is authoritative.
+     * Loads the minimum transaction range that can safely create a zero-interest checkpoint. Until the first such
+     * checkpoint exists, the whole history is deliberately loaded once so its running balance is authoritative.
      */
     public SavingsAccount assembleForZeroInterestPivot(final Long savingsId) {
         final SavingsAccount account = this.savingsAccountRepository.findSavingsWithNotFoundDetection(savingsId, true);
@@ -371,20 +370,28 @@ public class SavingsAccountAssembler {
         return account;
     }
 
+    public SavingsAccount assembleForBalanceReconciliation(final Long savingsId) {
+        final SavingsAccount account = this.savingsAccountRepository.findSavingsWithNotFoundDetection(savingsId, true);
+        account.loadLazyCollections();
+        account.setHelpers(this.savingsAccountTransactionSummaryWrapper, this.savingsHelper, this.configurationDomainService);
+        return account;
+    }
+
     public SavingsAccount loadTransactionsToSavingsAccount(final SavingsAccount account, final boolean backdatedTxnsAllowedTill) {
         List<SavingsAccountTransaction> savingsAccountTransactions = null;
         if (backdatedTxnsAllowedTill) {
             LocalDate pivotDate = account.getSummary().getInterestPostedTillDate();
             boolean isNotPresent = pivotDate == null;
             if (!isNotPresent) {
-                final List<SavingsAccountTransaction> zeroInterestPivots = this.savingsAccountRepository
-                        .findZeroInterestPivots(account, PageRequest.of(0, 1));
+                final List<SavingsAccountTransaction> zeroInterestPivots = this.savingsAccountRepository.findZeroInterestPivots(account,
+                        PageRequest.of(0, 1));
                 final SavingsAccountTransaction zeroInterestPivot = zeroInterestPivots.isEmpty() ? null : zeroInterestPivots.get(0);
 
                 if (zeroInterestPivot != null && pivotDate.equals(zeroInterestPivot.getTransactionDate())) {
                     // A zero-interest pivot is a complete balance snapshot. Do not load
                     // it again: its running balance becomes the opening balance.
-                    account.getSummary().setRunningBalanceOnPivotDate(zeroInterestPivot.getRunningBalance(account.getCurrency()).getAmount());
+                    account.getSummary()
+                            .setRunningBalanceOnPivotDate(zeroInterestPivot.getRunningBalance(account.getCurrency()).getAmount());
                     account.setZeroInterestPivotDate(pivotDate);
                     savingsAccountTransactions = this.savingsAccountRepository.findTransactionsAfterZeroInterestPivotDate(account,
                             pivotDate);
