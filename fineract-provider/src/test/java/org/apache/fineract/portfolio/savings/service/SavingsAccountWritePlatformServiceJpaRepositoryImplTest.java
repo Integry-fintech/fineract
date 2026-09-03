@@ -173,6 +173,33 @@ class SavingsAccountWritePlatformServiceJpaRepositoryImplTest {
     }
 
     @Test
+    void undoWithPivotConfigUsesOnlyThePostPivotTransactionSlice() {
+        final Long savingsId = 1L;
+        final Long transactionId = 10L;
+        final LocalDate businessDate = LocalDate.of(2026, 9, 3);
+        final SavingsAccount account = mock(SavingsAccount.class);
+        final SavingsAccountTransaction transaction = mock(SavingsAccountTransaction.class);
+        ThreadLocalContextUtil.setTenant(new FineractPlatformTenant(1L, "test", "Test Tenant", "UTC", null));
+        ThreadLocalContextUtil.setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, businessDate)));
+        MoneyHelper.initializeTenantRoundingMode("test", 6);
+        when(savingAccountAssembler.getPivotConfigStatus()).thenReturn(true);
+        when(savingAccountAssembler.assembleFrom(savingsId, true)).thenReturn(account);
+        when(account.findCurrentTransactionIdsWithPivotDateConfig()).thenReturn(List.of(transactionId));
+        when(account.findCurrentReversedTransactionIdsWithPivotDateConfig()).thenReturn(List.of());
+        when(savingsAccountTransactionRepository.findOneByIdAndSavingsAccountId(transactionId, savingsId)).thenReturn(transaction);
+        when(account.allowModify()).thenReturn(true);
+        when(account.getOnHoldFunds()).thenReturn(BigDecimal.ZERO);
+        when(account.getCurrency()).thenReturn(new MonetaryCurrency("USD", 2, null));
+
+        service.undoTransaction(savingsId, transactionId, true);
+
+        verify(account).undoSavingsTransaction(transactionId);
+        verify(account, Mockito.never()).undoTransaction(transactionId);
+        verify(account, Mockito.never()).findExistingTransactionIds();
+        verify(account, Mockito.never()).findExistingReversedTransactionIds();
+    }
+
+    @Test
     void validateTransactionsForTransfer_nullTransferDate_doesNotThrowNullPointerException() {
         LocalDate transactionDate = LocalDate.of(2024, 1, 10);
 
