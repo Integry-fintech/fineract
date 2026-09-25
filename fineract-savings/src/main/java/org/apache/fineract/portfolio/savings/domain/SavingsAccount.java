@@ -805,8 +805,12 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         }
 
         if (backdatedTxnsAllowedTill) {
-            this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
-                    this.savingsAccountTransactions);
+            if (hasZeroInterestPivotAtLastInterestPostingDate()) {
+                this.summary.updateAccountBalanceFromZeroInterestPivot(this.currency, this.savingsAccountTransactions);
+            } else {
+                this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
+                        this.savingsAccountTransactions);
+            }
         } else {
             this.summary.updateSummary(this.currency, this.savingsAccountTransactionSummaryWrapper, this.transactions);
         }
@@ -1070,8 +1074,7 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         }
 
         if (backdatedTxnsAllowedTill) {
-            this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, transaction,
-                    this.savingsAccountTransactions);
+            updateSummaryForPivotTransaction(transaction);
         }
 
         return transaction;
@@ -1209,8 +1212,7 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
             this.sub_status = SavingsAccountSubStatusEnum.NONE.getValue();
         }
         if (backdatedTxnsAllowedTill) {
-            this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, transaction,
-                    this.savingsAccountTransactions);
+            updateSummaryForPivotTransaction(transaction);
         }
         return transaction;
     }
@@ -2288,22 +2290,7 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         if (transactionToUndo == null) {
             throw new SavingsAccountTransactionNotFoundException(this.getId(), transactionId);
         }
-
-        validateAttemptToUndoTransferRelatedTransactions(transactionToUndo);
-        validateActivityNotBeforeClientOrGroupTransferDate(SavingsEvent.SAVINGS_UNDO_TRANSACTION, transactionToUndo.getTransactionDate());
-        transactionToUndo.reverse();
-        if (transactionToUndo.isChargeTransaction() || transactionToUndo.isWaiveCharge()) {
-            // undo charge
-            final Set<SavingsAccountChargePaidBy> chargesPaidBy = transactionToUndo.getSavingsAccountChargesPaid();
-            for (final SavingsAccountChargePaidBy savingsAccountChargePaidBy : chargesPaidBy) {
-                final SavingsAccountCharge chargeToUndo = savingsAccountChargePaidBy.getSavingsAccountCharge();
-                if (transactionToUndo.isChargeTransaction()) {
-                    chargeToUndo.undoPayment(this.getCurrency(), transactionToUndo.getAmount(this.getCurrency()));
-                } else if (transactionToUndo.isWaiveCharge()) {
-                    chargeToUndo.undoWaiver(this.getCurrency(), transactionToUndo.getAmount(this.getCurrency()));
-                }
-            }
-        }
+        undoTransactionInternal(transactionToUndo);
     }
 
     public void undoSavingsTransaction(final Long transactionId) {
@@ -2318,10 +2305,23 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         if (transactionToUndo == null) {
             throw new SavingsAccountTransactionNotFoundException(this.getId(), transactionId);
         }
+        undoTransactionInternal(transactionToUndo);
+    }
+
+    public void undoTransaction(final SavingsAccountTransaction transactionToUndo) {
+
+        undoTransactionInternal(transactionToUndo);
+    }
+
+    private void undoTransactionInternal(final SavingsAccountTransaction transactionToUndo) {
+
+        if (transactionToUndo.isReversed()) {
+            throw new SavingsAccountTransactionNotFoundException(this.getId(), transactionToUndo.getId());
+        }
 
         validateAttemptToUndoTransferRelatedTransactions(transactionToUndo);
         validateActivityNotBeforeClientOrGroupTransferDate(SavingsEvent.SAVINGS_UNDO_TRANSACTION, transactionToUndo.getTransactionDate());
-        transactionToUndo.reverse();
+        reverseTransaction(transactionToUndo);
         if (transactionToUndo.isChargeTransaction() || transactionToUndo.isWaiveCharge()) {
             // undo charge
             final Set<SavingsAccountChargePaidBy> chargesPaidBy = transactionToUndo.getSavingsAccountChargesPaid();
@@ -2336,27 +2336,12 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         }
     }
 
-    public void undoTransaction(final SavingsAccountTransaction transactionToUndo) {
-
-        if (transactionToUndo.isReversed()) {
-            throw new SavingsAccountTransactionNotFoundException(this.getId(), transactionToUndo.getId());
+    private void reverseTransaction(final SavingsAccountTransaction transactionToUndo) {
+        if (hasZeroInterestPivotAtLastInterestPostingDate()
+                && DateUtils.isAfter(transactionToUndo.getTransactionDate(), zeroInterestPivotDate)) {
+            this.summary.reverseTransactionFromSummary(this.currency, transactionToUndo);
         }
-
-        validateAttemptToUndoTransferRelatedTransactions(transactionToUndo);
-        validateActivityNotBeforeClientOrGroupTransferDate(SavingsEvent.SAVINGS_UNDO_TRANSACTION, transactionToUndo.getTransactionDate());
         transactionToUndo.reverse();
-        if (transactionToUndo.isChargeTransaction() || transactionToUndo.isWaiveCharge()) {
-            // undo charge
-            final Set<SavingsAccountChargePaidBy> chargesPaidBy = transactionToUndo.getSavingsAccountChargesPaid();
-            for (final SavingsAccountChargePaidBy savingsAccountChargePaidBy : chargesPaidBy) {
-                final SavingsAccountCharge chargeToUndo = savingsAccountChargePaidBy.getSavingsAccountCharge();
-                if (transactionToUndo.isChargeTransaction()) {
-                    chargeToUndo.undoPayment(this.getCurrency(), transactionToUndo.getAmount(this.currency));
-                } else if (transactionToUndo.isWaiveCharge()) {
-                    chargeToUndo.undoWaiver(this.getCurrency(), transactionToUndo.getAmount(this.currency));
-                }
-            }
-        }
     }
 
     private LocalDate findLatestAnnualFeeTransactionDueDate() {
@@ -3107,10 +3092,18 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         transaction.getSavingsAccountChargesPaid().add(chargePaidBy);
         if (backdatedTxnsAllowedTill) {
             this.savingsAccountTransactions.add(transaction);
-            this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, transaction,
-                    this.savingsAccountTransactions);
+            updateSummaryForPivotTransaction(transaction);
         } else {
             this.transactions.add(transaction);
+        }
+    }
+
+    private void updateSummaryForPivotTransaction(final SavingsAccountTransaction transaction) {
+        if (hasZeroInterestPivotAtLastInterestPostingDate()) {
+            this.summary.updateSummaryForZeroInterestPivot(this.currency, transaction);
+        } else {
+            this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, transaction,
+                    this.savingsAccountTransactions);
         }
     }
 

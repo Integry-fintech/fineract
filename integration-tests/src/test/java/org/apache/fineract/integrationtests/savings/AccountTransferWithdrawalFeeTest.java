@@ -23,18 +23,23 @@ import static io.restassured.RestAssured.given;
 import java.math.BigDecimal;
 import org.apache.fineract.client.models.AccountTransferRequest;
 import org.apache.fineract.client.models.ChargeRequest;
+import org.apache.fineract.client.models.GlobalConfigurationPropertyData;
 import org.apache.fineract.client.models.PaymentTypeCreateRequest;
 import org.apache.fineract.client.models.PostChargesResponse;
+import org.apache.fineract.client.models.PostSavingsAccountTransactionsRequest;
 import org.apache.fineract.client.models.PostSavingsAccountsResponse;
 import org.apache.fineract.client.models.PostSavingsAccountsSavingsAccountIdChargesRequest;
 import org.apache.fineract.client.models.PostSavingsAccountsSavingsAccountIdChargesResponse;
 import org.apache.fineract.client.models.PostSavingsProductsRequest;
 import org.apache.fineract.client.models.PostSavingsProductsResponse;
+import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
 import org.apache.fineract.client.models.SavingsAccountData;
+import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.PaymentTypeHelper;
 import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.integrationtests.common.charges.ChargesHelper;
+import org.apache.fineract.integrationtests.common.savings.SavingsAccountHelper;
 import org.apache.fineract.integrationtests.savings.base.BaseSavingsIntegrationTest;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -175,6 +180,118 @@ public class AccountTransferWithdrawalFeeTest extends BaseSavingsIntegrationTest
                 fineractClient().savingsAccounts.retrieveSavingsAccount(toSavingsId, false, null, "summary"));
         Assertions.assertEquals(BigDecimal.valueOf(15000).setScale(0), toSavingsAccount.getSummary().getAccountBalance().setScale(0),
                 "Verifying To Savings Account Balance after Account Transfer");
+    }
+
+    @Test
+    public void testZeroInterestPivotTransferAndUndoPreserveChargeAdjustedBalances() {
+        final String activationDate = "01 September 2026";
+        final String pivotDate = "02 September 2026";
+        final String transactionDate = "03 September 2026";
+        final GlobalConfigurationPropertyData originalBackdated = globalConfigurationHelper
+                .getGlobalConfigurationByName(GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING);
+        final GlobalConfigurationPropertyData originalRelaxedDays = globalConfigurationHelper.getGlobalConfigurationByName(
+                GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING_DATE_FOR_DAYS);
+        final boolean originalSchedulerStatus = schedulerJobHelper.getSchedulerStatus();
+        final Long[] savingsChargeId = new Long[1];
+
+        try {
+            globalConfigurationHelper.updateGlobalConfiguration(
+                    GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING,
+                    new PutGlobalConfigurationsRequest().enabled(false));
+            globalConfigurationHelper.updateGlobalConfiguration(
+                    GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING_DATE_FOR_DAYS,
+                    new PutGlobalConfigurationsRequest().enabled(false));
+
+            final ChargesHelper chargesHelper = new ChargesHelper();
+            final Long withdrawalFeeId = chargesHelper
+                    .createCharges(new ChargeRequest().active(true).name(Utils.uniqueRandomStringGenerator("Transfer_Fee_", 6))
+                            .currencyCode("USD").amount(3.0d).chargeAppliesTo(2).chargeTimeType(5).chargeCalculationType(1).locale("en"))
+                    .getResourceId();
+            final Long flatChargeId = chargesHelper
+                    .createCharges(
+                            new ChargeRequest().active(true).name(Utils.uniqueRandomStringGenerator("Pivot_Charge_", 6)).currencyCode("USD")
+                                    .amount(7.0d).chargeAppliesTo(2).chargeTimeType(2).chargeCalculationType(1).locale("en").penalty(false))
+                    .getResourceId();
+            final Long fromClientId = clientHelper.createClient(ClientHelper.defaultClientCreationRequest()).getClientId();
+            final Long toClientId = clientHelper.createClient(ClientHelper.defaultClientCreationRequest()).getClientId();
+            final Long productId = createProduct(savingsProduct().nominalAnnualInterestRate(0.0)).getResourceId();
+            final Long fromSavingsId = applySavingsAccount(applySavingsRequest(fromClientId, productId, activationDate)).getSavingsId();
+            final Long toSavingsId = applySavingsAccount(applySavingsRequest(toClientId, productId, activationDate)).getSavingsId();
+
+            runAt(activationDate, () -> {
+                enableWithdrawalFeeForTransfers(fromSavingsId);
+                approveSavingsAccount(fromSavingsId, activationDate);
+                activateSavingsAccount(fromSavingsId, activationDate);
+                approveSavingsAccount(toSavingsId, activationDate);
+                activateSavingsAccount(toSavingsId, activationDate);
+                deposit(fromSavingsId, activationDate, new BigDecimal("1000.00"));
+                ok(fineractClient().savingsAccountCharges.createSavingsAccountCharge(fromSavingsId,
+                        new PostSavingsAccountsSavingsAccountIdChargesRequest().chargeId(withdrawalFeeId).amount(3.0f).locale("en")));
+                savingsChargeId[0] = ok(fineractClient().savingsAccountCharges.addSavingsAccountCharge(fromSavingsId,
+                        new PostSavingsAccountsSavingsAccountIdChargesRequest().chargeId(flatChargeId).amount(7.0f).dueDate(transactionDate)
+                                .dateFormat(DATETIME_PATTERN).locale("en")))
+                        .getResourceId();
+            });
+
+            runAt(pivotDate, () -> schedulerJobHelper.executeAndAwaitJobByShortName("SA_ZIPV"));
+
+            runAt(transactionDate, () -> {
+                final SavingsAccountHelper savingsAccountHelper = new SavingsAccountHelper(requestSpec, responseSpec);
+                savingsAccountHelper.payCharge(savingsChargeId[0].intValue(), fromSavingsId.intValue(), "7.00", transactionDate);
+
+                final var transfer = ok(fineractClient().accountTransfers.createAccountTransfer(new AccountTransferRequest()
+                        .fromClientId(String.valueOf(fromClientId)).fromAccountId(String.valueOf(fromSavingsId)).fromAccountType("2")
+                        .fromOfficeId("1").toClientId(String.valueOf(toClientId)).toAccountId(String.valueOf(toSavingsId))
+                        .toAccountType("2").toOfficeId("1").transferDate(transactionDate).transferAmount("100.00")
+                        .transferDescription("Pivot transfer").dateFormat(DATETIME_PATTERN).locale("en_GB")));
+
+                assertSummary(fromSavingsId, "890.00", "1000.00", "100.00", "3.00", "7.00");
+                assertSummary(toSavingsId, "100.00", "100.00", "0.00", "0.00", "0.00");
+
+                Utils.performServerPost(requestSpec, responseSpec, "/fineract-provider/api/v1/accounttransfers/" + transfer.getResourceId()
+                        + "?command=undo&" + Utils.TENANT_IDENTIFIER, "{}", "resourceId");
+
+                assertSummary(fromSavingsId, "993.00", "1000.00", "0.00", "0.00", "7.00");
+                assertSummary(toSavingsId, "0.00", "0.00", "0.00", "0.00", "0.00");
+
+                deposit(fromSavingsId, transactionDate, new BigDecimal("10.00"));
+                ok(fineractClient().savingsTransactions.createSavingsAccountTransaction(
+                        fromSavingsId, new PostSavingsAccountTransactionsRequest().dateFormat(DATETIME_PATTERN).locale("en")
+                                .paymentTypeId(1).transactionAmount(new BigDecimal("5.00")).transactionDate(transactionDate),
+                        "withdrawal"));
+                assertSummary(fromSavingsId, "995.00", "1010.00", "5.00", "3.00", "7.00");
+
+                schedulerJobHelper.executeAndAwaitJobByShortName("SA_RBAL");
+                assertSummary(fromSavingsId, "995.00", "1010.00", "5.00", "3.00", "7.00");
+                assertSummary(toSavingsId, "0.00", "0.00", "0.00", "0.00", "0.00");
+            });
+        } finally {
+            restoreConfiguration(GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING, originalBackdated);
+            restoreConfiguration(GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING_DATE_FOR_DAYS,
+                    originalRelaxedDays);
+            schedulerJobHelper.updateSchedulerStatus(originalSchedulerStatus);
+        }
+    }
+
+    private void assertSummary(final Long savingsId, final String balance, final String deposits, final String withdrawals,
+            final String withdrawalFees, final String feeCharges) {
+        final var summary = ok(fineractClient().savingsAccounts.retrieveSavingsAccount(savingsId, false, null, "summary")).getSummary();
+        assertAmount("account balance", balance, summary.getAccountBalance());
+        assertAmount("total deposits", deposits, summary.getTotalDeposits());
+        assertAmount("total withdrawals", withdrawals, summary.getTotalWithdrawals());
+        assertAmount("total withdrawal fees", withdrawalFees, summary.getTotalWithdrawalFees());
+        assertAmount("total fee charges", feeCharges, summary.getTotalFeeCharge());
+    }
+
+    private void assertAmount(final String field, final String expected, final BigDecimal actual) {
+        final BigDecimal actualOrZero = actual == null ? BigDecimal.ZERO : actual;
+        Assertions.assertEquals(0, new BigDecimal(expected).compareTo(actualOrZero),
+                () -> field + ": expected " + expected + " but was " + actualOrZero);
+    }
+
+    private void restoreConfiguration(final String name, final GlobalConfigurationPropertyData configuration) {
+        globalConfigurationHelper.updateGlobalConfiguration(name,
+                new PutGlobalConfigurationsRequest().enabled(configuration.getEnabled()).value(configuration.getValue()));
     }
 
     private void enableWithdrawalFeeForTransfers(Long savingsId) {

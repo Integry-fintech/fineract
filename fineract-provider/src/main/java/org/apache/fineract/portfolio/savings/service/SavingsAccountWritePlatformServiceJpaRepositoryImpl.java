@@ -790,7 +790,11 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         final SavingsAccount account = this.savingAccountAssembler.assembleFrom(savingsId, backdatedTxnsAllowedTill);
         final Set<Long> existingTransactionIds = new HashSet<>();
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
-        updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
+        if (backdatedTxnsAllowedTill) {
+            updateSavingsTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
+        } else {
+            updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
+        }
 
         final SavingsAccountTransaction savingsAccountTransaction = this.savingsAccountTransactionRepository
                 .findOneByIdAndSavingsAccountId(transactionId, savingsId);
@@ -819,7 +823,11 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         if (account.isNotActive()) {
             throwValidationForActiveStatus(SavingsApiConstants.undoTransactionAction);
         }
-        account.undoTransaction(transactionId);
+        if (backdatedTxnsAllowedTill) {
+            account.undoSavingsTransaction(transactionId);
+        } else {
+            account.undoTransaction(transactionId);
+        }
 
         // undoing transaction is withdrawal then undo withdrawal fee
         // transaction if any
@@ -827,7 +835,11 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
             final SavingsAccountTransaction nextSavingsAccountTransaction = this.savingsAccountTransactionRepository
                     .findOneByIdAndSavingsAccountId(transactionId + 1, savingsId);
             if (nextSavingsAccountTransaction != null && nextSavingsAccountTransaction.isWithdrawalFeeAndNotReversed()) {
-                account.undoTransaction(transactionId + 1);
+                if (backdatedTxnsAllowedTill) {
+                    account.undoSavingsTransaction(transactionId + 1);
+                } else {
+                    account.undoTransaction(transactionId + 1);
+                }
             }
         }
         boolean isInterestTransfer = false;
