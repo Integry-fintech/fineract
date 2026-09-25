@@ -183,8 +183,7 @@ public class SavingsAccountPostInterestServiceImpl implements SavingsAccountPost
             account.getSummary().updateSummary(account.getCurrency(), this.savingsAccountTransactionSummaryWrapper,
                     account.getTransactions());
         } else {
-            account.getSummary().updateSummaryWithPivotConfig(account.getCurrency(), this.savingsAccountTransactionSummaryWrapper, null,
-                    account.getSavingsAccountTransactionsWithPivotConfig());
+            account.updateSummaryInPivotMode();
         }
     }
 }
