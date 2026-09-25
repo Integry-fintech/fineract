@@ -1367,14 +1367,14 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
                 .isSavingsInterestPostingAtCurrentPeriodEnd();
         final Integer financialYearBeginningMonth = this.configurationDomainService.retrieveFinancialYearBeginningMonth();
 
-        final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository
-                .findOneWithNotFoundDetection(savingsAccountChargeId, savingsAccountId);
-
         final boolean backdatedTxnsAllowedTill = this.savingAccountAssembler.getPivotConfigStatus();
 
-        // Lock the account like the other savings writes; in pivot mode only the transactions after the pivot are
-        // loaded.
+        // Lock the account like the other savings writes, and before reading the charge, so that a concurrent waiver of
+        // the same charge finds it already waived. In pivot mode only the transactions after the pivot are loaded.
         final SavingsAccount account = this.savingAccountAssembler.assembleFrom(savingsAccountId, backdatedTxnsAllowedTill);
+
+        final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository
+                .findOneWithNotFoundDetection(savingsAccountChargeId, savingsAccountId);
 
         final Set<Long> existingTransactionIds = new HashSet<>();
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
@@ -1460,6 +1460,12 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         final BigDecimal amountPaid = command.bigDecimalValueOfParameterNamed(amountParamName);
         final LocalDate transactionDate = command.localDateValueOfParameterNamed(dueAsOfDateParamName);
 
+        final boolean pivotConfig = this.savingAccountAssembler.getPivotConfigStatus();
+        if (pivotConfig) {
+            // Lock the account like a withdrawal, and before reading the charge, so that a concurrent payment of the
+            // same charge finds it already paid.
+            this.savingAccountRepositoryWrapper.findSavingsWithNotFoundDetection(savingsAccountId, true);
+        }
         final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository
                 .findOneWithNotFoundDetection(savingsAccountChargeId, savingsAccountId);
 
@@ -1486,10 +1492,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
             }
         }
 
-        final boolean backdatedTxnsAllowedTill = this.savingAccountAssembler.getPivotConfigStatus();
-
-        SavingsAccountTransaction chargeTransaction = this.payCharge(savingsAccountCharge, transactionDate, amountPaid, fmt,
-                backdatedTxnsAllowedTill);
+        SavingsAccountTransaction chargeTransaction = this.payCharge(savingsAccountCharge, transactionDate, amountPaid, fmt, pivotConfig);
 
         final String noteText = command.stringValueOfParameterNamed("note");
         if (StringUtils.isNotBlank(noteText)) {
@@ -1524,21 +1527,25 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     }
 
     private SavingsAccountTransaction payCharge(final SavingsAccountCharge savingsAccountCharge, final LocalDate transactionDate,
-            final BigDecimal amountPaid, final DateTimeFormatter formatter, final boolean backdatedTxnsAllowedTill) {
+            final BigDecimal amountPaid, final DateTimeFormatter formatter, final boolean pivotConfig) {
         final boolean isSavingsInterestPostingAtCurrentPeriodEnd = this.configurationDomainService
                 .isSavingsInterestPostingAtCurrentPeriodEnd();
         final Integer financialYearBeginningMonth = this.configurationDomainService.retrieveFinancialYearBeginningMonth();
 
-        final SavingsAccount account;
-        if (backdatedTxnsAllowedTill) {
-            // Same as a withdrawal: lock the account, load only the transactions after its pivot, and reject a payment
-            // dated on or before the pivot.
-            account = this.savingAccountAssembler.assembleFrom(savingsAccountCharge.savingsAccount().getId(), true);
-            this.savingsAccountTransactionDataValidator.validateTransactionWithPivotDate(transactionDate, account);
-        } else {
-            account = savingsAccountCharge.savingsAccount();
-            this.savingAccountAssembler.assignSavingAccountHelpers(account);
+        // With the pivot configuration the caller has already locked this account. Only a zero-interest pivot is a
+        // complete balance snapshot: with it, load the transactions after the pivot and reject a payment dated on or
+        // before it. Without one, the pivot path would load the whole history anyway and rebuild the balance without
+        // the charges, so recalculate it all.
+        final SavingsAccount account = savingsAccountCharge.savingsAccount();
+        boolean backdatedTxnsAllowedTill = false;
+        if (pivotConfig) {
+            backdatedTxnsAllowedTill = this.savingAccountAssembler.hasZeroInterestPivotAtLastInterestPostingDate(account);
+            if (backdatedTxnsAllowedTill) {
+                this.savingAccountAssembler.loadTransactionsToSavingsAccount(account, true);
+                this.savingsAccountTransactionDataValidator.validateTransactionWithPivotDate(transactionDate, account);
+            }
         }
+        this.savingAccountAssembler.assignSavingAccountHelpers(account);
         final Set<Long> existingTransactionIds = new HashSet<>();
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
         Pageable sortedByDateAndIdDesc = PageRequest.of(0, 1, Sort.by("dateOf", "id").descending());
