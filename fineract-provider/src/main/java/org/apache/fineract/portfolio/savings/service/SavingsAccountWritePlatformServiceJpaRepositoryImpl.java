@@ -1240,7 +1240,10 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         final Long savingsAccountId = command.getSavingsId();
         this.savingsAccountChargeDataValidator.validateAdd(command.json());
 
-        final SavingsAccount savingsAccount = this.savingAccountAssembler.assembleFrom(savingsAccountId, false);
+        // Adding a charge neither reads nor changes the transactions, so the account history is not loaded.
+        final SavingsAccount savingsAccount = this.savingAccountRepositoryWrapper
+                .findWithoutTransactionsWithNotFoundDetection(savingsAccountId);
+        this.savingAccountAssembler.assignSavingAccountHelpers(savingsAccount);
         checkClientOrGroupActive(savingsAccount);
 
         final Locale locale = command.extractLocale();
@@ -1367,12 +1370,11 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository
                 .findOneWithNotFoundDetection(savingsAccountChargeId, savingsAccountId);
 
-        // Get Savings account from savings charge
-        final SavingsAccount account = savingsAccountCharge.savingsAccount();
-
         final boolean backdatedTxnsAllowedTill = this.savingAccountAssembler.getPivotConfigStatus();
 
-        this.savingAccountAssembler.loadTransactionsToSavingsAccount(account, backdatedTxnsAllowedTill);
+        // Lock the account like the other savings writes; in pivot mode only the transactions after the pivot are
+        // loaded.
+        final SavingsAccount account = this.savingAccountAssembler.assembleFrom(savingsAccountId, backdatedTxnsAllowedTill);
 
         final Set<Long> existingTransactionIds = new HashSet<>();
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
@@ -1484,7 +1486,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
             }
         }
 
-        final boolean backdatedTxnsAllowedTill = false;
+        final boolean backdatedTxnsAllowedTill = this.savingAccountAssembler.getPivotConfigStatus();
 
         SavingsAccountTransaction chargeTransaction = this.payCharge(savingsAccountCharge, transactionDate, amountPaid, fmt,
                 backdatedTxnsAllowedTill);
@@ -1527,9 +1529,16 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
                 .isSavingsInterestPostingAtCurrentPeriodEnd();
         final Integer financialYearBeginningMonth = this.configurationDomainService.retrieveFinancialYearBeginningMonth();
 
-        // Get Savings account from savings charge
-        final SavingsAccount account = savingsAccountCharge.savingsAccount();
-        this.savingAccountAssembler.assignSavingAccountHelpers(account);
+        final SavingsAccount account;
+        if (backdatedTxnsAllowedTill) {
+            // Same as a withdrawal: lock the account, load only the transactions after its pivot, and reject a payment
+            // dated on or before the pivot.
+            account = this.savingAccountAssembler.assembleFrom(savingsAccountCharge.savingsAccount().getId(), true);
+            this.savingsAccountTransactionDataValidator.validateTransactionWithPivotDate(transactionDate, account);
+        } else {
+            account = savingsAccountCharge.savingsAccount();
+            this.savingAccountAssembler.assignSavingAccountHelpers(account);
+        }
         final Set<Long> existingTransactionIds = new HashSet<>();
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
         Pageable sortedByDateAndIdDesc = PageRequest.of(0, 1, Sort.by("dateOf", "id").descending());
@@ -1539,7 +1548,11 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
 
         account.validateAccountBalanceDoesNotViolateOverdraft(savingsAccountTransaction, amountPaid);
 
-        updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
+        if (backdatedTxnsAllowedTill) {
+            updateSavingsTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
+        } else {
+            updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
+        }
         SavingsAccountTransaction chargeTransaction = account.payCharge(savingsAccountCharge, amountPaid, transactionDate, formatter,
                 backdatedTxnsAllowedTill, null);
         boolean isInterestTransfer = false;
@@ -1549,7 +1562,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         if (account.isBeforeLastPostingPeriod(transactionDate, backdatedTxnsAllowedTill)) {
             final LocalDate today = DateUtils.getBusinessLocalDate();
             savingsAccountPostInterestService.postInterest(account, mc, today, isInterestTransfer,
-                    isSavingsInterestPostingAtCurrentPeriodEnd, financialYearBeginningMonth, postInterestOnDate, isInterestTransfer,
+                    isSavingsInterestPostingAtCurrentPeriodEnd, financialYearBeginningMonth, postInterestOnDate, backdatedTxnsAllowedTill,
                     postReversals);
         } else {
             final LocalDate today = DateUtils.getBusinessLocalDate();
@@ -1567,6 +1580,9 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
                 depositAccountOnHoldTransactions, backdatedTxnsAllowedTill);
 
         saveTransactionToGenerateTransactionId(chargeTransaction);
+        if (backdatedTxnsAllowedTill) {
+            this.savingsAccountTransactionRepository.saveAll(account.getSavingsAccountTransactionsWithPivotConfig());
+        }
 
         this.savingAccountRepositoryWrapper.saveAndFlush(account);
 
