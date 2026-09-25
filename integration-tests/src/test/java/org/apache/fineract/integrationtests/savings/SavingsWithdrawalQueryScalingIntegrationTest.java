@@ -28,28 +28,34 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.client.models.ChargeRequest;
 import org.apache.fineract.client.models.GlobalConfigurationPropertyData;
 import org.apache.fineract.client.models.PostSavingsAccountTransactionsRequest;
+import org.apache.fineract.client.models.PostSavingsAccountsSavingsAccountIdChargesRequest;
+import org.apache.fineract.client.models.PostSavingsAccountsSavingsAccountIdChargesSavingsAccountChargeIdRequest;
 import org.apache.fineract.client.models.PostSavingsProductsRequest;
 import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
 import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.Utils;
+import org.apache.fineract.integrationtests.common.charges.ChargesHelper;
 import org.apache.fineract.integrationtests.savings.base.BaseSavingsIntegrationTest;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
- * The cost of a savings withdrawal must not grow with the account history.
+ * The cost of the writes of a cash-out (the withdrawal, and adding and paying its charge) must not grow with the
+ * account history.
  *
  * <p>
  * Each test opens two accounts that differ only in how many transactions they have before or after their zero-interest
- * pivot, and profiles a single withdrawal on each with {@code pg_stat_statements}:
+ * pivot, and profiles the same operation on each with {@code pg_stat_statements}:
  * <ul>
- * <li>history before the pivot: the withdrawal must not read it at all;</li>
+ * <li>history before the pivot: the operation must not read it at all;</li>
  * <li>history after the pivot: it is read, but its child rows must be fetched in batches, not one statement per
  * transaction.</li>
  * </ul>
@@ -78,21 +84,30 @@ public class SavingsWithdrawalQueryScalingIntegrationTest extends BaseSavingsInt
 
     @Test
     public void withdrawalCostDoesNotGrowWithHistoryBeforeZeroInterestPivot() {
-        final QueryProfile[] profiles = profileWithdrawals(SMALL_HISTORY, LARGE_HISTORY, SMALL_HISTORY, SMALL_HISTORY);
-        final QueryProfile small = profiles[0];
-        final QueryProfile large = profiles[1];
-
-        final int historyDelta = LARGE_HISTORY - SMALL_HISTORY;
-        assertChildStatementsDoNotGrow(small, large, historyDelta, "before the pivot");
-        final long rowsDelta = large.rows(TRANSACTION_TABLE) - small.rows(TRANSACTION_TABLE);
-        Assertions.assertTrue(rowsDelta < historyDelta / 2, () -> "rows read from " + TRANSACTION_TABLE + " grew by " + rowsDelta + " for "
-                + historyDelta + " more transactions before the pivot (the full history is loaded)");
+        final QueryProfile[] profiles = profile("withdrawal", this::withdraw, SMALL_HISTORY, LARGE_HISTORY, SMALL_HISTORY, SMALL_HISTORY);
+        assertHistoryBeforePivotIsNotRead(profiles[0], profiles[1], LARGE_HISTORY - SMALL_HISTORY);
     }
 
     @Test
     public void withdrawalChildStatementsDoNotGrowWithHistoryAfterZeroInterestPivot() {
-        final QueryProfile[] profiles = profileWithdrawals(SMALL_HISTORY, SMALL_HISTORY, SMALL_HISTORY, LARGE_HISTORY / 2);
+        final QueryProfile[] profiles = profile("withdrawal", this::withdraw, SMALL_HISTORY, SMALL_HISTORY, SMALL_HISTORY,
+                LARGE_HISTORY / 2);
         assertChildStatementsDoNotGrow(profiles[0], profiles[1], LARGE_HISTORY / 2 - SMALL_HISTORY, "after the pivot");
+    }
+
+    @Test
+    public void chargeCostDoesNotGrowWithHistoryBeforeZeroInterestPivot() {
+        final Long chargeId = createFlatCharge();
+        final QueryProfile[] profiles = profile("add and pay charge", savingsId -> addAndPayCharge(savingsId, chargeId), SMALL_HISTORY,
+                LARGE_HISTORY, SMALL_HISTORY, SMALL_HISTORY);
+        assertHistoryBeforePivotIsNotRead(profiles[0], profiles[1], LARGE_HISTORY - SMALL_HISTORY);
+    }
+
+    private static void assertHistoryBeforePivotIsNotRead(QueryProfile small, QueryProfile large, int historyDelta) {
+        assertChildStatementsDoNotGrow(small, large, historyDelta, "before the pivot");
+        final long rowsDelta = large.rows(TRANSACTION_TABLE) - small.rows(TRANSACTION_TABLE);
+        Assertions.assertTrue(rowsDelta < historyDelta / 2, () -> "rows read from " + TRANSACTION_TABLE + " grew by " + rowsDelta + " for "
+                + historyDelta + " more transactions before the pivot (the full history is loaded)");
     }
 
     private static void assertChildStatementsDoNotGrow(QueryProfile small, QueryProfile large, int historyDelta, String where) {
@@ -104,10 +119,11 @@ public class SavingsWithdrawalQueryScalingIntegrationTest extends BaseSavingsInt
     }
 
     /**
-     * Opens two zero-interest accounts with the given number of deposits before and after their pivot, and profiles one
-     * withdrawal on each. Returns the small account profile first.
+     * Opens two zero-interest accounts with the given number of deposits before and after their pivot, and profiles the
+     * operation once on each. Returns the small account profile first.
      */
-    private QueryProfile[] profileWithdrawals(int smallBefore, int largeBefore, int smallAfter, int largeAfter) {
+    private QueryProfile[] profile(String name, Consumer<Long> operation, int smallBefore, int largeBefore, int smallAfter,
+            int largeAfter) {
         Assumptions.assumeTrue(statementStatisticsAvailable(), "requires PostgreSQL with pg_stat_statements");
 
         final GlobalConfigurationPropertyData originalBackdated = globalConfigurationHelper
@@ -142,11 +158,11 @@ public class SavingsWithdrawalQueryScalingIntegrationTest extends BaseSavingsInt
                 depositTimes(smallSavingsId, WITHDRAWAL_DATE, smallAfter);
                 depositTimes(largeSavingsId, WITHDRAWAL_DATE, largeAfter);
                 schedulerJobHelper.updateSchedulerStatus(false);
-                profiles[0] = profileWithdrawal(smallSavingsId);
-                profiles[1] = profileWithdrawal(largeSavingsId);
+                profiles[0] = profileOperation(smallSavingsId, operation);
+                profiles[1] = profileOperation(largeSavingsId, operation);
             });
-            log.info("Withdrawal with {} transactions before and {} after the pivot: {}", smallBefore, smallAfter, profiles[0].describe());
-            log.info("Withdrawal with {} transactions before and {} after the pivot: {}", largeBefore, largeAfter, profiles[1].describe());
+            log.info("{} with {} transactions before and {} after the pivot: {}", name, smallBefore, smallAfter, profiles[0].describe());
+            log.info("{} with {} transactions before and {} after the pivot: {}", name, largeBefore, largeAfter, profiles[1].describe());
             return profiles;
         } finally {
             restoreConfiguration(GlobalConfigurationConstants.ALLOW_BACKDATED_TRANSACTION_BEFORE_INTEREST_POSTING, originalBackdated);
@@ -172,19 +188,42 @@ public class SavingsWithdrawalQueryScalingIntegrationTest extends BaseSavingsInt
         }
     }
 
-    private QueryProfile profileWithdrawal(Long savingsId) {
+    private QueryProfile profileOperation(Long savingsId, Consumer<Long> operation) {
         try (Connection connection = DriverManager.getConnection(PG_URL, PG_USER, PG_PASSWORD);
                 Statement statement = connection.createStatement()) {
             statement.execute("SELECT pg_stat_statements_reset()");
-            ok(fineractClient().savingsTransactions
-                    .createSavingsAccountTransaction(
-                            savingsId, new PostSavingsAccountTransactionsRequest().dateFormat(DATETIME_PATTERN).locale("en")
-                                    .paymentTypeId(1).transactionAmount(new BigDecimal("1.00")).transactionDate(WITHDRAWAL_DATE),
-                            "withdrawal"));
+            operation.accept(savingsId);
             return QueryProfile.read(statement);
         } catch (SQLException e) {
             throw new IllegalStateException("could not read pg_stat_statements", e);
         }
+    }
+
+    private void withdraw(Long savingsId) {
+        ok(fineractClient().savingsTransactions.createSavingsAccountTransaction(savingsId,
+                new PostSavingsAccountTransactionsRequest().dateFormat(DATETIME_PATTERN).locale("en").paymentTypeId(1)
+                        .transactionAmount(new BigDecimal("1.00")).transactionDate(WITHDRAWAL_DATE),
+                "withdrawal"));
+    }
+
+    /** What Bridge does after the withdrawal of a cash-out: add the fee to the account and pay it. */
+    private void addAndPayCharge(Long savingsId, Long chargeId) {
+        final Long savingsChargeId = ok(fineractClient().savingsAccountCharges.addSavingsAccountCharge(savingsId,
+                new PostSavingsAccountsSavingsAccountIdChargesRequest().chargeId(chargeId).amount(1.0f).dueDate(WITHDRAWAL_DATE)
+                        .dateFormat(DATETIME_PATTERN).locale("en")))
+                .getResourceId();
+        ok(fineractClient().savingsAccountCharges.payOrWaiveSavingsAccountCharge(savingsId, savingsChargeId,
+                new PostSavingsAccountsSavingsAccountIdChargesSavingsAccountChargeIdRequest().amount(1.0f).dueDate(WITHDRAWAL_DATE)
+                        .dateFormat(DATETIME_PATTERN).locale("en"),
+                "paycharge"));
+    }
+
+    private Long createFlatCharge() {
+        return new ChargesHelper()
+                .createCharges(
+                        new ChargeRequest().active(true).name(Utils.uniqueRandomStringGenerator("Scaling_Fee_", 6)).currencyCode("USD")
+                                .amount(1.0d).chargeAppliesTo(2).chargeTimeType(2).chargeCalculationType(1).locale("en").penalty(false))
+                .getResourceId();
     }
 
     private static boolean statementStatisticsAvailable() {
