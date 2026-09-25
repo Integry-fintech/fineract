@@ -63,6 +63,11 @@ public class SavingsAccountRepositoryWrapper {
         if (!backdatedTxnsAllowedTill) {
             account = findOneWithNotFoundDetection(savingsId);
         } else {
+            // Read the account before locking it. A lock query refreshes its result, and when EclipseLink builds a
+            // refreshed entity it treats the collections initialized in its fields (new ArrayList/HashSet) as already
+            // instantiated, so it loads every LAZY collection, including the full transaction history. Locking an
+            // entity that is already managed refreshes it with its collections still uninstantiated.
+            this.repository.findById(savingsId).orElseThrow(() -> new SavingsAccountNotFoundException(savingsId));
             account = this.repository.findOneLocked(savingsId);
             if (account == null) {
                 throw new SavingsAccountNotFoundException(savingsId);
