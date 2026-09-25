@@ -1534,16 +1534,13 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
 
         // With the pivot configuration the caller has already locked this account. Only a zero-interest pivot is a
         // complete balance snapshot: with it, load the transactions after the pivot and reject a payment dated on or
-        // before it. Without one, the pivot path would load the whole history anyway and rebuild the balance without
-        // the charges, so recalculate it all.
+        // before it, as for withdrawals. Otherwise keep the full recalculation from the whole history.
         final SavingsAccount account = savingsAccountCharge.savingsAccount();
-        boolean backdatedTxnsAllowedTill = false;
-        if (pivotConfig) {
-            backdatedTxnsAllowedTill = this.savingAccountAssembler.hasZeroInterestPivotAtLastInterestPostingDate(account);
-            if (backdatedTxnsAllowedTill) {
-                this.savingAccountAssembler.loadTransactionsToSavingsAccount(account, true);
-                this.savingsAccountTransactionDataValidator.validateTransactionWithPivotDate(transactionDate, account);
-            }
+        final boolean useZeroInterestPivotPath = pivotConfig
+                && this.savingAccountAssembler.hasZeroInterestPivotAtLastInterestPostingDate(account);
+        if (useZeroInterestPivotPath) {
+            this.savingAccountAssembler.loadTransactionsToSavingsAccount(account, true);
+            this.savingsAccountTransactionDataValidator.validateTransactionWithPivotDate(transactionDate, account);
         }
         this.savingAccountAssembler.assignSavingAccountHelpers(account);
         final Set<Long> existingTransactionIds = new HashSet<>();
@@ -1555,26 +1552,26 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
 
         account.validateAccountBalanceDoesNotViolateOverdraft(savingsAccountTransaction, amountPaid);
 
-        if (backdatedTxnsAllowedTill) {
+        if (useZeroInterestPivotPath) {
             updateSavingsTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
         } else {
             updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
         }
         SavingsAccountTransaction chargeTransaction = account.payCharge(savingsAccountCharge, amountPaid, transactionDate, formatter,
-                backdatedTxnsAllowedTill, null);
+                useZeroInterestPivotPath, null);
         boolean isInterestTransfer = false;
         LocalDate postInterestOnDate = null;
         final MathContext mc = MathContext.DECIMAL64;
         boolean postReversals = false;
-        if (account.isBeforeLastPostingPeriod(transactionDate, backdatedTxnsAllowedTill)) {
+        if (account.isBeforeLastPostingPeriod(transactionDate, useZeroInterestPivotPath)) {
             final LocalDate today = DateUtils.getBusinessLocalDate();
             savingsAccountPostInterestService.postInterest(account, mc, today, isInterestTransfer,
-                    isSavingsInterestPostingAtCurrentPeriodEnd, financialYearBeginningMonth, postInterestOnDate, backdatedTxnsAllowedTill,
+                    isSavingsInterestPostingAtCurrentPeriodEnd, financialYearBeginningMonth, postInterestOnDate, useZeroInterestPivotPath,
                     postReversals);
         } else {
             final LocalDate today = DateUtils.getBusinessLocalDate();
             account.calculateInterestUsing(mc, today, isInterestTransfer, isSavingsInterestPostingAtCurrentPeriodEnd,
-                    financialYearBeginningMonth, postInterestOnDate, backdatedTxnsAllowedTill, postReversals);
+                    financialYearBeginningMonth, postInterestOnDate, useZeroInterestPivotPath, postReversals);
         }
         List<DepositAccountOnHoldTransaction> depositAccountOnHoldTransactions = null;
 
@@ -1584,16 +1581,16 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         }
 
         account.validateAccountBalanceConstraints("." + SavingsAccountTransactionType.PAY_CHARGE.getCode(),
-                depositAccountOnHoldTransactions, backdatedTxnsAllowedTill);
+                depositAccountOnHoldTransactions, useZeroInterestPivotPath);
 
         saveTransactionToGenerateTransactionId(chargeTransaction);
-        if (backdatedTxnsAllowedTill) {
+        if (useZeroInterestPivotPath) {
             this.savingsAccountTransactionRepository.saveAll(account.getSavingsAccountTransactionsWithPivotConfig());
         }
 
         this.savingAccountRepositoryWrapper.saveAndFlush(account);
 
-        postJournalEntries(account, existingTransactionIds, existingReversedTransactionIds, backdatedTxnsAllowedTill);
+        postJournalEntries(account, existingTransactionIds, existingReversedTransactionIds, useZeroInterestPivotPath);
 
         return chargeTransaction;
     }

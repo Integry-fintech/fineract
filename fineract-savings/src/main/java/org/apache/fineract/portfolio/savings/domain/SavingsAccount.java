@@ -488,9 +488,8 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         if (hasZeroInterestPivotAtLastInterestPostingDate()) {
             this.summary.updateAccountBalanceFromZeroInterestPivot(this.currency, this.savingsAccountTransactions);
         } else if (this.summary.getInterestPostedTillDate() == null) {
-            // The regular pivot rebuild leaves out the charges, fees and annual fees already paid, so rebuild the
-            // summary
-            // from all the transactions, as outside pivot mode.
+            // Without any pivot the whole history is loaded, so rebuild the summary as outside pivot mode. The pivot
+            // rebuild below would leave out the charges, fees and annual fees already paid.
             this.summary.updateSummary(this.currency, this.savingsAccountTransactionSummaryWrapper, this.savingsAccountTransactions);
         } else {
             this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
