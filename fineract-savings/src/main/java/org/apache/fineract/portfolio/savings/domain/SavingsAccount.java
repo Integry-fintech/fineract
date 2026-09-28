@@ -479,6 +479,25 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         this.zeroInterestPivotDate = zeroInterestPivotDate;
     }
 
+    /**
+     * Rebuilds the summary in pivot mode from the transactions loaded for it: from the zero-interest pivot when there
+     * is one, from the whole history when there is no pivot (the history is then loaded in full), and otherwise from
+     * the regular interest pivot.
+     */
+    public void updateSummaryInPivotMode() {
+        if (hasZeroInterestPivotAtLastInterestPostingDate()) {
+            this.summary.updateAccountBalanceFromZeroInterestPivot(this.currency, this.savingsAccountTransactions);
+        } else if (this.summary.getInterestPostedTillDate() == null) {
+            // The regular pivot rebuild leaves out the charges, fees and annual fees already paid, so rebuild the
+            // summary
+            // from all the transactions, as outside pivot mode.
+            this.summary.updateSummary(this.currency, this.savingsAccountTransactionSummaryWrapper, this.savingsAccountTransactions);
+        } else {
+            this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
+                    this.savingsAccountTransactions);
+        }
+    }
+
     public boolean hasZeroInterestPivotAtLastInterestPostingDate() {
         return this.zeroInterestPivotDate != null && this.zeroInterestPivotDate.equals(this.summary.getInterestPostedTillDate());
     }
@@ -805,12 +824,7 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         }
 
         if (backdatedTxnsAllowedTill) {
-            if (hasZeroInterestPivotAtLastInterestPostingDate()) {
-                this.summary.updateAccountBalanceFromZeroInterestPivot(this.currency, this.savingsAccountTransactions);
-            } else {
-                this.summary.updateSummaryWithPivotConfig(this.currency, this.savingsAccountTransactionSummaryWrapper, null,
-                        this.savingsAccountTransactions);
-            }
+            updateSummaryInPivotMode();
         } else {
             this.summary.updateSummary(this.currency, this.savingsAccountTransactionSummaryWrapper, this.transactions);
         }
