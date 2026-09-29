@@ -57,6 +57,14 @@ public class SavingsAccountRepositoryWrapper {
         return account;
     }
 
+    /**
+     * Loads the account without its transactions, for writes that neither read nor change them, such as adding a
+     * charge. Its lazy collections load on access, so call it inside the write transaction.
+     */
+    public SavingsAccount findWithoutTransactionsWithNotFoundDetection(final Long savingsId) {
+        return this.repository.findById(savingsId).orElseThrow(() -> new SavingsAccountNotFoundException(savingsId));
+    }
+
     @Transactional
     public SavingsAccount findSavingsWithNotFoundDetection(final Long savingsId, final boolean backdatedTxnsAllowedTill) {
         SavingsAccount account = null;

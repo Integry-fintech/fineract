@@ -456,6 +456,20 @@ public class SavingsAccountAssembler {
         return account;
     }
 
+    /**
+     * Whether the last interest posting date of the account is a zero-interest pivot, the only pivot whose running
+     * balance is a complete snapshot of the history before it.
+     */
+    public boolean hasZeroInterestPivotAtLastInterestPostingDate(final SavingsAccount account) {
+        final LocalDate pivotDate = account.getSummary().getInterestPostedTillDate();
+        if (pivotDate == null) {
+            return false;
+        }
+        final List<SavingsAccountTransaction> zeroInterestPivots = this.savingsAccountRepository.findZeroInterestPivots(account,
+                PageRequest.of(0, 1));
+        return !zeroInterestPivots.isEmpty() && pivotDate.equals(zeroInterestPivots.get(0).getTransactionDate());
+    }
+
     public boolean getPivotConfigStatus() {
         return this.configurationDomainService.retrievePivotDateConfig();
     }
