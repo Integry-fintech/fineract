@@ -54,6 +54,8 @@ import org.apache.fineract.portfolio.savings.domain.interest.EndOfDayBalance;
 import org.apache.fineract.portfolio.savings.domain.interest.SavingsAccountTransactionDetailsForPostingPeriod;
 import org.apache.fineract.portfolio.savings.service.SavingsEnumerations;
 import org.apache.fineract.portfolio.tax.domain.TaxComponent;
+import org.eclipse.persistence.annotations.BatchFetch;
+import org.eclipse.persistence.annotations.BatchFetchType;
 import org.springframework.util.CollectionUtils;
 
 /**
@@ -71,6 +73,9 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
     @JoinColumn(name = "office_id", nullable = false)
     private Office office;
 
+    // The child rows of a list of transactions are read with one IN query per relation instead of one query per
+    // transaction (an account write loads every transaction after its zero-interest pivot).
+    @BatchFetch(BatchFetchType.IN)
     @ManyToOne(cascade = CascadeType.ALL, optional = true)
     @JoinColumn(name = "payment_detail_id", nullable = true)
     private PaymentDetail paymentDetail;
@@ -102,6 +107,7 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
     @Column(name = "balance_number_of_days_derived", nullable = true)
     private Integer balanceNumberOfDays;
 
+    @BatchFetch(BatchFetchType.IN)
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "savingsAccountTransaction", orphanRemoval = true, fetch = FetchType.EAGER)
     private Set<SavingsAccountChargePaidBy> savingsAccountChargesPaid = new HashSet<>();
 
@@ -121,6 +127,7 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
     @Column(name = "is_loan_disbursement", length = 1, nullable = true)
     private boolean isLoanDisbursement;
 
+    @BatchFetch(BatchFetchType.IN)
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER, mappedBy = "savingsAccountTransaction")
     private List<SavingsAccountTransactionTaxDetails> taxDetails = new ArrayList<>();
 
